@@ -23,10 +23,12 @@ htmlcov/
 
 # IDE
 .idea/
-.vscode/
 *.swp
 *.swo
 *~
+
+# Keep VS Code config in repo (useful for team)
+# .vscode/
 
 # OS
 .DS_Store

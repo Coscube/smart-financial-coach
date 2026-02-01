@@ -36,6 +36,7 @@ passlib = { version = "^1.7.4", extras = ["bcrypt"] }
 python-dotenv = "1.0.1"
 pyyaml = "6.0.2"
 jinja2 = "3.1.5"
+email-validator = "^2.3.0"
 
 [tool.poetry.group.dev.dependencies]
 # Testing
@@ -92,3 +93,8 @@ exclude = '''
 profile = "black"
 line_length = 100
 skip = [".git", ".venv", "__pycache__"]
+
+[tool.flake8]
+max-line-length = 100
+exclude = [".git", ".venv", "__pycache__", "migrations"]
+extend-ignore = ["E203", "W503"]

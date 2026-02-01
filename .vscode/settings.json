@@ -1,0 +1,43 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.analysis.extraPaths": ["${workspaceFolder}/backend/src"],
+  
+  // Python linting and formatting
+  "python.analysis.typeCheckingMode": "basic",
+  "flake8.args": ["--max-line-length=100"],
+  "pylint.args": ["--max-line-length=100"],
+  
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    },
+    "editor.rulers": [100]
+  },
+  
+  "[javascript][javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  
+  "eslint.workingDirectories": ["./frontend"],
+  
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/node_modules": true
+  },
+  
+  "sqltools.connections": [
+    {
+      "name": "Financial Coach DB",
+      "driver": "PostgreSQL",
+      "server": "localhost",
+      "port": 5432,
+      "database": "financial_coach",
+      "username": "postgres",
+      "password": "password"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+# Local Development - PostgreSQL via Docker Compose
+# Usage: docker-compose -f backend/scripts/local-dev.yml up -d
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: financial-coach-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: financial_coach
+    ports:
+      - "5432:5432"
+    volumes:
+      - financial_coach_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d financial_coach"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Optional: pgAdmin for database management UI
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: financial-coach-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    profiles:
+      - tools  # Only starts with: docker-compose --profile tools up
+
+volumes:
+  financial_coach_data:
