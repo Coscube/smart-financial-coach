@@ -15,18 +15,14 @@ import {
   Container,
   Grid,
 } from '@mui/material';
-import {
-  Visibility,
-  VisibilityOff,
-  AccountBalance,
-} from '@mui/icons-material';
+import { Visibility, VisibilityOff, AccountBalance } from '@mui/icons-material';
 import { useUserStore } from '@stores';
 import { apiClient } from '@services/api';
 
 export function Signup() {
   const navigate = useNavigate();
   const { setUser } = useUserStore();
-  
+
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -66,6 +62,9 @@ export function Signup() {
     setIsLoading(true);
 
     try {
+      // Clear any stale tokens before registration
+      apiClient.clearTokens();
+
       // Register user
       await apiClient.register({
         email: formData.email,
@@ -74,16 +73,17 @@ export function Signup() {
         last_name: formData.lastName,
       });
 
-      // Auto login after registration
-      await apiClient.login(formData.email, formData.password);
-      
-      // Fetch user profile
-      const user = await apiClient.get('/users/me');
-      setUser(user);
-      
-      navigate('/', { replace: true });
+      // Redirect to login with success message
+      navigate('/login', {
+        replace: true,
+        state: { message: 'Account created successfully! Please login.' },
+      });
     } catch (err) {
-      setError(err.message || 'Registration failed. Please try again.');
+      if (err.name === 'TypeError') {
+        setError('Network error, please try again.');
+      } else {
+        setError(err.message || 'Registration failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -176,10 +176,7 @@ export function Signup() {
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
-                      <IconButton
-                        onClick={() => setShowPassword(!showPassword)}
-                        edge="end"
-                      >
+                      <IconButton onClick={() => setShowPassword(!showPassword)} edge="end">
                         {showPassword ? <VisibilityOff /> : <Visibility />}
                       </IconButton>
                     </InputAdornment>
@@ -219,11 +216,7 @@ export function Signup() {
                 disabled={isLoading}
                 sx={{ mt: 3, mb: 2, py: 1.5 }}
               >
-                {isLoading ? (
-                  <CircularProgress size={24} color="inherit" />
-                ) : (
-                  'Create Account'
-                )}
+                {isLoading ? <CircularProgress size={24} color="inherit" /> : 'Create Account'}
               </Button>
 
               <Box textAlign="center">

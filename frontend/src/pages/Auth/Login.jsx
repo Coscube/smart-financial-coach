@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useNavigate, Link as RouterLink, useLocation } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -20,7 +20,9 @@ import { apiClient } from '@services/api';
 
 export function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { setUser } = useUserStore();
+  const successMessage = location.state?.message;
 
   const [formData, setFormData] = useState({
     email: '',
@@ -42,6 +44,9 @@ export function Login() {
     setIsLoading(true);
 
     try {
+      // Clear any stale tokens before login
+      apiClient.clearTokens();
+
       // Login and get tokens
       await apiClient.login(formData.email, formData.password);
 
@@ -51,7 +56,11 @@ export function Login() {
 
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err.message || 'Invalid email or password');
+      if (err.name === 'TypeError') {
+        setError('Network error, please try again.');
+      } else {
+        setError(err.message || 'Invalid email or password');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -84,6 +93,12 @@ export function Login() {
             <Typography variant="h5" component="h2" textAlign="center" mb={3}>
               Welcome Back
             </Typography>
+
+            {successMessage && (
+              <Alert severity="success" sx={{ mb: 3 }}>
+                {successMessage}
+              </Alert>
+            )}
 
             {error && (
               <Alert severity="error" sx={{ mb: 3 }}>
