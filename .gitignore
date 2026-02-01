@@ -2,6 +2,9 @@
 node_modules/
 .pnpm-store/
 
+# NPM lock file
+package-lock.json
+
 # Build outputs
 dist/
 build/
