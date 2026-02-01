@@ -134,6 +134,16 @@
       "runOptions": {
         "runOn": "default"
       }
+    },
+    {
+      "label": "Wait for Backend",
+      "type": "shell",
+      "command": "powershell -Command \"$timeout = 30; $elapsed = 0; while ($elapsed -lt $timeout) { try { $null = Invoke-WebRequest -Uri 'http://localhost:8000/api/health' -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop; Write-Host 'Backend is ready!'; exit 0 } catch { Write-Host 'Waiting for backend...'; Start-Sleep -Seconds 1; $elapsed++ } }; Write-Host 'Timeout waiting for backend'; exit 1\"",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      }
     }
   ]
 }
