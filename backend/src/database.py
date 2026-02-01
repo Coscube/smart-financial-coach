@@ -64,7 +64,7 @@ async def init_db() -> None:
     """Initialize database tables."""
     async with engine.begin() as conn:
         # Import all models here to ensure they are registered
-        from src.models import user, transaction, budget, goal  # noqa: F401
+        from src.models import budget, goal, transaction, user  # noqa: F401
 
         await conn.run_sync(Base.metadata.create_all)
     print("Database initialized successfully")

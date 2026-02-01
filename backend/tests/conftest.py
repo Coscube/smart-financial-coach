@@ -9,7 +9,6 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from src.database import Base, get_db
 from src.main import app
 
@@ -33,11 +32,9 @@ test_async_session_factory = async_sessionmaker(
 
 
 @pytest.fixture(scope="session")
-def event_loop():
-    """Create an event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+def event_loop_policy():
+    """Set event loop policy for the test session."""
+    return asyncio.get_event_loop_policy()
 
 
 @pytest_asyncio.fixture(scope="function")

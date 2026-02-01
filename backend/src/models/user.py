@@ -13,7 +13,7 @@ from src.database import Base
 if TYPE_CHECKING:
     from src.models.budget import Budget
     from src.models.goal import Goal
-    from src.models.transaction import Expense, Income
+    from src.models.transaction import Transaction
 
 
 class User(Base):
@@ -34,11 +34,8 @@ class User(Base):
     )
 
     # Relationships
-    expenses: Mapped[list["Expense"]] = relationship(
-        "Expense", back_populates="user", cascade="all, delete-orphan"
-    )
-    incomes: Mapped[list["Income"]] = relationship(
-        "Income", back_populates="user", cascade="all, delete-orphan"
+    transactions: Mapped[list["Transaction"]] = relationship(
+        "Transaction", back_populates="user", cascade="all, delete-orphan"
     )
     budgets: Mapped[list["Budget"]] = relationship(
         "Budget", back_populates="user", cascade="all, delete-orphan"

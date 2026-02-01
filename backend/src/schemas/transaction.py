@@ -23,7 +23,7 @@ class TransactionBase(BaseModel):
 class TransactionCreate(TransactionBase):
     """Schema for creating a new transaction."""
 
-    pass
+    transaction_type: TransactionType
 
 
 class TransactionUpdate(BaseModel):
@@ -44,6 +44,7 @@ class TransactionResponse(TransactionBase):
 
     id: int
     user_id: int
+    transaction_type: TransactionType
     created_at: datetime
     updated_at: datetime
 
