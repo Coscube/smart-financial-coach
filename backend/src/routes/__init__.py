@@ -4,6 +4,7 @@ API Routes package.
 
 from fastapi import APIRouter
 
+from src.routes.ai_coach import router as ai_coach_router
 from src.routes.auth import router as auth_router
 from src.routes.budgets import router as budgets_router
 from src.routes.categories import router as categories_router
@@ -24,5 +25,6 @@ api_router.include_router(transactions_router, prefix="/transactions", tags=["Tr
 api_router.include_router(budgets_router, prefix="/budgets", tags=["Budgets"])
 api_router.include_router(goals_router, prefix="/goals", tags=["Goals"])
 api_router.include_router(upload_router, prefix="/upload", tags=["Upload"])
+api_router.include_router(ai_coach_router, prefix="/ai-coach", tags=["AI Coach"])
 
 __all__ = ["api_router"]

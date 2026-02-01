@@ -5,3 +5,4 @@ export { Goals } from './Goals';
 export { Reports } from './Reports';
 export { Settings } from './Settings';
 export { Login, Signup } from './Auth';
+export { AICoach } from './AICoach';

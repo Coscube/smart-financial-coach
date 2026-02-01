@@ -16,6 +16,7 @@ import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import FlagIcon from '@mui/icons-material/Flag';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import SettingsIcon from '@mui/icons-material/Settings';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
@@ -23,6 +24,7 @@ const menuItems = [
   { text: 'Transactions', icon: <ReceiptLongIcon />, path: '/transactions' },
   { text: 'Goals', icon: <FlagIcon />, path: '/goals' },
   { text: 'Reports', icon: <AssessmentIcon />, path: '/reports' },
+  { text: 'AI Coach', icon: <SmartToyIcon />, path: '/ai-coach' },
 ];
 
 const bottomMenuItems = [{ text: 'Settings', icon: <SettingsIcon />, path: '/settings' }];

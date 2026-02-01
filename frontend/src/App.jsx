@@ -8,6 +8,7 @@ import { Transactions } from '@pages/Transactions';
 import { Goals } from '@pages/Goals';
 import { Reports } from '@pages/Reports';
 import { Settings } from '@pages/Settings';
+import { AICoach } from '@pages/AICoach';
 import { Login, Signup } from '@pages/Auth';
 import { useUserStore } from '@stores';
 
@@ -54,6 +55,7 @@ function App() {
         <Route path="goals" element={<Goals />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="ai-coach" element={<AICoach />} />
       </Route>
     </Routes>
   );
