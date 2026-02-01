@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # AI Settings (OpenAI or compatible API)
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = ""  # Optional: for using other providers like Claude via proxy
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""

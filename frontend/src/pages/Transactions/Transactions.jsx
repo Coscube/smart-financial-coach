@@ -65,19 +65,36 @@ export function Transactions() {
   const [loadingCategories, setLoadingCategories] = useState(true);
 
   // Get available years from transactions
-  const availableYears = [...new Set(transactions.map(t => new Date(t.transaction_date).getFullYear()))].sort((a, b) => b - a);
-  
+  const availableYears = [
+    ...new Set(transactions.map((t) => new Date(t.transaction_date).getFullYear())),
+  ].sort((a, b) => b - a);
+
   // Get available months for selected year
-  const availableMonths = selectedYear 
-    ? [...new Set(transactions
-        .filter(t => new Date(t.transaction_date).getFullYear() === parseInt(selectedYear))
-        .map(t => new Date(t.transaction_date).getMonth())
-      )].sort((a, b) => a - b)
+  const availableMonths = selectedYear
+    ? [
+        ...new Set(
+          transactions
+            .filter((t) => new Date(t.transaction_date).getFullYear() === parseInt(selectedYear))
+            .map((t) => new Date(t.transaction_date).getMonth())
+        ),
+      ].sort((a, b) => a - b)
     : [];
 
   // Month names for display
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
-                      'July', 'August', 'September', 'October', 'November', 'December'];
+  const monthNames = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
 
   // Fetch transactions from backend
   useEffect(() => {
@@ -110,11 +127,11 @@ export function Transactions() {
         setLoadingCategories(true);
         const expenseData = await apiClient.get('/categories', { transaction_type: 'expense' });
         const incomeData = await apiClient.get('/categories', { transaction_type: 'income' });
-        
+
         // Extract just the category names
-        const expenseNames = (expenseData || []).map(cat => cat.name);
-        const incomeNames = (incomeData || []).map(cat => cat.name);
-        
+        const expenseNames = (expenseData || []).map((cat) => cat.name);
+        const incomeNames = (incomeData || []).map((cat) => cat.name);
+
         setExpenseCategories(expenseNames);
         setIncomeCategories(incomeNames);
         console.log('Loaded expense categories:', expenseNames);
@@ -146,14 +163,14 @@ export function Transactions() {
     const transactionDate = new Date(t.transaction_date);
     const txYear = transactionDate.getFullYear();
     const txMonth = transactionDate.getMonth();
-    
+
     let matchesYear = true;
     let matchesMonth = true;
-    
+
     if (selectedYear) {
       matchesYear = txYear === parseInt(selectedYear);
     }
-    
+
     if (selectedMonth !== '') {
       matchesMonth = txMonth === parseInt(selectedMonth);
     }
@@ -174,11 +191,25 @@ export function Transactions() {
   // Log filtered results
   useEffect(() => {
     console.log(`Filtered transactions: ${filteredTransactions.length}/${transactions.length}`);
-    console.log('Filters:', { selectedYear, selectedMonth, transactionType, searchQuery, dateFilter });
+    console.log('Filters:', {
+      selectedYear,
+      selectedMonth,
+      transactionType,
+      searchQuery,
+      dateFilter,
+    });
     if (filteredTransactions.length > 0) {
       console.log('Sample filtered transaction:', filteredTransactions[0]);
     }
-  }, [filteredTransactions, selectedYear, selectedMonth, transactionType, searchQuery, transactions, dateFilter]);
+  }, [
+    filteredTransactions,
+    selectedYear,
+    selectedMonth,
+    transactionType,
+    searchQuery,
+    transactions,
+    dateFilter,
+  ]);
 
   // Sort transactions
   const sortedTransactions = [...filteredTransactions].sort((a, b) => {
@@ -259,10 +290,10 @@ export function Transactions() {
     }
 
     const { amount, category, description, transaction_date } = form;
-    
+
     // Convert date string to ISO format datetime
     const dateObj = new Date(transaction_date + 'T00:00:00Z');
-    
+
     const newTransaction = {
       amount: parseFloat(amount),
       category,
@@ -608,16 +639,20 @@ export function Transactions() {
             <Typography>No transactions found for the selected filters.</Typography>
           </Box>
         ) : (
-          <TableContainer>
-            <Table>
+          <TableContainer sx={{ maxHeight: 'calc(100vh - 350px)', overflow: 'auto' }}>
+            <Table stickyHeader>
               <TableHead>
                 <TableRow sx={{ bgcolor: 'action.hover' }}>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Description</TableCell>
-                  <TableCell>Category</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell align="right">Amount</TableCell>
-                  <TableCell align="center">Actions</TableCell>
+                  <TableCell sx={{ bgcolor: 'background.paper' }}>Date</TableCell>
+                  <TableCell sx={{ bgcolor: 'background.paper' }}>Description</TableCell>
+                  <TableCell sx={{ bgcolor: 'background.paper' }}>Category</TableCell>
+                  <TableCell sx={{ bgcolor: 'background.paper' }}>Type</TableCell>
+                  <TableCell align="right" sx={{ bgcolor: 'background.paper' }}>
+                    Amount
+                  </TableCell>
+                  <TableCell align="center" sx={{ bgcolor: 'background.paper' }}>
+                    Actions
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -655,7 +690,8 @@ export function Transactions() {
                     <TableCell
                       align="right"
                       sx={{
-                        color: transaction.transaction_type === 'income' ? 'success.main' : 'error.main',
+                        color:
+                          transaction.transaction_type === 'income' ? 'success.main' : 'error.main',
                         fontWeight: 600,
                       }}
                     >
@@ -686,7 +722,7 @@ export function Transactions() {
               {uploadError}
             </Alert>
           )}
-          
+
           {uploadResult && (
             <Alert severity="success" sx={{ mb: 2 }}>
               <Typography variant="body2">

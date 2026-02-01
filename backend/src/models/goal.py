@@ -53,15 +53,9 @@ class Goal(Base):
     goal_type: Mapped[GoalType] = mapped_column(Enum(GoalType), nullable=False)
     target_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     current_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
-    status: Mapped[GoalStatus] = mapped_column(
-        Enum(GoalStatus), default=GoalStatus.NOT_STARTED
-    )
-    target_date: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    status: Mapped[GoalStatus] = mapped_column(Enum(GoalStatus), default=GoalStatus.NOT_STARTED)
+    target_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
