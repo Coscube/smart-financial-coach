@@ -19,17 +19,11 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "cwd": "${workspaceFolder}/frontend",
-      "console": "integratedTerminal"
-    },
-    {
-      "name": "Frontend: Vite Dev (Wait for Backend)",
-      "type": "node",
-      "request": "launch",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "cwd": "${workspaceFolder}/frontend",
       "console": "integratedTerminal",
-      "preLaunchTask": "Wait for Backend"
+      "serverReadyAction": {
+        "pattern": "Local:   (https?://[^\\s]+)",
+        "action": "openExternally"
+      }
     },
     {
       "name": "Backend: Debug Tests",
@@ -45,7 +39,7 @@
   "compounds": [
     {
       "name": "Full Stack: Frontend + Backend",
-      "configurations": ["Backend: FastAPI", "Frontend: Vite Dev (Wait for Backend)"],
+      "configurations": ["Backend: FastAPI", "Frontend: Vite Dev"],
       "stopAll": true,
       "presentation": {
         "group": "fullstack",
