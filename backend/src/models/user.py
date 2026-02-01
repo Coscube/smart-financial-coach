@@ -11,9 +11,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database import Base
 
 if TYPE_CHECKING:
-    from src.models.transaction import Transaction
     from src.models.budget import Budget
     from src.models.goal import Goal
+    from src.models.transaction import Expense, Income
 
 
 class User(Base):
@@ -28,16 +28,17 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     # Relationships
-    transactions: Mapped[list["Transaction"]] = relationship(
-        "Transaction", back_populates="user", cascade="all, delete-orphan"
+    expenses: Mapped[list["Expense"]] = relationship(
+        "Expense", back_populates="user", cascade="all, delete-orphan"
+    )
+    incomes: Mapped[list["Income"]] = relationship(
+        "Income", back_populates="user", cascade="all, delete-orphan"
     )
     budgets: Mapped[list["Budget"]] = relationship(
         "Budget", back_populates="user", cascade="all, delete-orphan"

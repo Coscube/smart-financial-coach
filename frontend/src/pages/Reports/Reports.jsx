@@ -1,4 +1,12 @@
-import { Box, Card, CardContent, Typography, Grid, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Grid,
+  ToggleButton,
+  ToggleButtonGroup,
+} from '@mui/material';
 import { useState } from 'react';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -22,6 +30,13 @@ export function Reports() {
     { category: 'Shopping', amount: 420, percentage: 12, color: '#ff9800' },
     { category: 'Healthcare', amount: 50, percentage: 2, color: '#00bcd4' },
     { category: 'Other', amount: 275, percentage: 8, color: '#607d8b' },
+  ];
+
+  const incomeByCategory = [
+    { category: 'Salary', amount: 7000, percentage: 83, color: '#2e7d32' },
+    { category: 'Investments', amount: 900, percentage: 11, color: '#1976d2' },
+    { category: 'Freelance', amount: 350, percentage: 4, color: '#ed6c02' },
+    { category: 'Other', amount: 200, percentage: 2, color: '#607d8b' },
   ];
 
   return (
@@ -99,8 +114,46 @@ export function Reports() {
         </Grid>
       </Grid>
 
-      {/* Expenses Breakdown */}
+      {/* Income & Expenses Breakdown */}
       <Grid container spacing={3}>
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Income by Category
+              </Typography>
+              <Box sx={{ mt: 2 }}>
+                {incomeByCategory.map((item) => (
+                  <Box key={item.category} sx={{ mb: 2 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Typography variant="body2">{item.category}</Typography>
+                      <Typography variant="body2" fontWeight="bold">
+                        ${item.amount} ({item.percentage}%)
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={{
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: 'grey.200',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          height: '100%',
+                          width: `${item.percentage}%`,
+                          backgroundColor: item.color,
+                          borderRadius: 4,
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
@@ -139,8 +192,11 @@ export function Reports() {
             </CardContent>
           </Card>
         </Grid>
+      </Grid>
 
-        <Grid size={{ xs: 12, md: 6 }}>
+      {/* Monthly Trends - pushed down */}
+      <Grid container spacing={3} sx={{ mt: 3 }}>
+        <Grid size={12}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>

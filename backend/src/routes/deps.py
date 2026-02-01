@@ -17,39 +17,17 @@ from src.services.user import UserService
 security = HTTPBearer()
 
 
-async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> User:
-    """Dependency to get the current authenticated user."""
-    token = credentials.credentials
-    user_id = AuthService.verify_access_token(token)
+# --- MOCK USER FOR DEVELOPMENT ---
+from types import SimpleNamespace
 
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+# async def get_current_user(*args, **kwargs):
+#     """Mocked user for development: always returns a fake user object."""
+#     return SimpleNamespace(id=1, email="mock@user.com", is_active=True)
 
-    user_service = UserService(db)
-    user = await user_service.get_by_id(user_id)
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User account is inactive",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    return user
+async def get_current_user():
+    """Mocked user for development: always returns a fake user object."""
+    return SimpleNamespace(id=1, email="mock@user.com", is_active=True)
 
 
 # Type alias for current user dependency

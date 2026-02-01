@@ -49,34 +49,47 @@ class TransactionType(enum.Enum):
     EXPENSE = "expense"
 
 
-class Transaction(Base):
-    """Financial transaction model."""
+class Expense(Base):
+    """Expense transaction model."""
 
-    __tablename__ = "transactions"
+    __tablename__ = "expense"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    transaction_type: Mapped[TransactionType] = mapped_column(
-        Enum(TransactionType), nullable=False
-    )
-    category: Mapped[TransactionCategory] = mapped_column(
-        Enum(TransactionCategory), nullable=False
-    )
+    category: Mapped[TransactionCategory] = mapped_column(Enum(TransactionCategory), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     merchant: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    transaction_date: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    transaction_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="transactions")
+    user: Mapped["User"] = relationship("User", back_populates="expenses")
 
     def __repr__(self) -> str:
-        return f"<Transaction(id={self.id}, amount={self.amount}, type={self.transaction_type})>"
+        return f"<Expense(id={self.id}, amount={self.amount}, category={self.category})>"
+
+
+class Income(Base):
+    """Income transaction model."""
+
+    __tablename__ = "income"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    category: Mapped[TransactionCategory] = mapped_column(Enum(TransactionCategory), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    merchant: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    transaction_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="incomes")
+
+    def __repr__(self) -> str:
+        return f"<Income(id={self.id}, amount={self.amount}, category={self.category})>"
