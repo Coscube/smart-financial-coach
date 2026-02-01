@@ -19,14 +19,19 @@ class AuthService:
     """Service for authentication operations."""
 
     @staticmethod
+    def _truncate_password(password: str) -> str:
+        """Truncate password to 72 bytes (bcrypt limit)."""
+        return password.encode("utf-8")[:72].decode("utf-8", errors="ignore")
+
+    @staticmethod
     def hash_password(password: str) -> str:
         """Hash a password using bcrypt."""
-        return pwd_context.hash(password)
+        return pwd_context.hash(AuthService._truncate_password(password))
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash."""
-        return pwd_context.verify(plain_password, hashed_password)
+        return pwd_context.verify(AuthService._truncate_password(plain_password), hashed_password)
 
     @staticmethod
     def create_access_token(user_id: int) -> str:
@@ -39,24 +44,18 @@ class AuthService:
             "exp": expire,
             "type": "access",
         }
-        return jwt.encode(
-            payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
-        )
+        return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
     @staticmethod
     def create_refresh_token(user_id: int) -> str:
         """Create a JWT refresh token."""
-        expire = datetime.now(timezone.utc) + timedelta(
-            days=settings.jwt_refresh_token_expire_days
-        )
+        expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_token_expire_days)
         payload = {
             "sub": user_id,
             "exp": expire,
             "type": "refresh",
         }
-        return jwt.encode(
-            payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
-        )
+        return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
     @staticmethod
     def create_tokens(user_id: int) -> Token:
