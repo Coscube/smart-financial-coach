@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.models.transaction import Transaction, TransactionCategory, TransactionType
+from src.models.transaction import Transaction, TransactionType
 from src.models.user import User
 from src.services.auth import AuthService
 
@@ -63,7 +63,7 @@ async def sample_income_transaction(db_session: AsyncSession, test_user: User) -
         user_id=test_user.id,
         transaction_type=TransactionType.INCOME,
         amount=Decimal("3000.00"),
-        category=TransactionCategory.SALARY,
+        category="salary",
         description="Monthly salary",
         transaction_date=datetime.now(timezone.utc),
     )
@@ -80,7 +80,7 @@ async def sample_expense_transaction(db_session: AsyncSession, test_user: User) 
         user_id=test_user.id,
         transaction_type=TransactionType.EXPENSE,
         amount=Decimal("150.50"),
-        category=TransactionCategory.GROCERIES,
+        category="groceries",
         description="Weekly groceries",
         transaction_date=datetime.now(timezone.utc),
     )
@@ -222,10 +222,10 @@ class TestTransactionCreation:
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_create_transaction_invalid_category(
+    async def test_create_transaction_empty_category(
         self, client: AsyncClient, test_user_authenticated: dict
     ):
-        """Test creating transaction with invalid category."""
+        """Test creating transaction with empty category fails."""
         headers = {
             "Authorization": f"{test_user_authenticated['token_type']} {test_user_authenticated['access_token']}"
         }
@@ -233,7 +233,7 @@ class TestTransactionCreation:
         transaction_data = {
             "transaction_type": "income",
             "amount": 2500.00,
-            "category": "invalid_category",
+            "category": "",
             "description": "Monthly salary",
             "transaction_date": datetime.now(timezone.utc).isoformat(),
         }
@@ -298,7 +298,7 @@ class TestTransactionRetrieval:
                 user_id=user.id,
                 transaction_type=TransactionType.INCOME,
                 amount=Decimal("1000.00"),
-                category=TransactionCategory.SALARY,
+                category="salary",
                 description=f"Salary {i+1}",
                 transaction_date=datetime.now(timezone.utc) - timedelta(days=i),
             )
@@ -343,7 +343,7 @@ class TestTransactionRetrieval:
                 user_id=user.id,
                 transaction_type=TransactionType.EXPENSE,
                 amount=Decimal("50.00"),
-                category=TransactionCategory.GROCERIES,
+                category="groceries",
                 description=f"Groceries {i+1}",
                 transaction_date=datetime.now(timezone.utc),
             )
@@ -381,7 +381,7 @@ class TestTransactionRetrieval:
             user_id=user.id,
             transaction_type=TransactionType.INCOME,
             amount=Decimal("5000.00"),
-            category=TransactionCategory.FREELANCE,
+            category="freelance",
             description="Freelance project",
             transaction_date=datetime.now(timezone.utc),
         )
@@ -437,7 +437,7 @@ class TestTransactionRetrieval:
             user_id=other_user.id,
             transaction_type=TransactionType.EXPENSE,
             amount=Decimal("100.00"),
-            category=TransactionCategory.HOUSING,
+            category="housing",
             description="Rent",
             transaction_date=datetime.now(timezone.utc),
         )
@@ -480,7 +480,7 @@ class TestTransactionUpdate:
             user_id=user.id,
             transaction_type=TransactionType.EXPENSE,
             amount=Decimal("100.00"),
-            category=TransactionCategory.GROCERIES,
+            category="groceries",
             description="Old description",
             transaction_date=datetime.now(timezone.utc),
         )
@@ -532,7 +532,7 @@ class TestTransactionUpdate:
             user_id=user.id,
             transaction_type=TransactionType.INCOME,
             amount=Decimal("2000.00"),
-            category=TransactionCategory.SALARY,
+            category="salary",
             description="Monthly salary",
             transaction_date=datetime.now(timezone.utc),
         )
@@ -597,7 +597,7 @@ class TestTransactionUpdate:
             user_id=user.id,
             transaction_type=TransactionType.EXPENSE,
             amount=Decimal("50.00"),
-            category=TransactionCategory.GROCERIES,
+            category="groceries",
             description="Groceries",
             transaction_date=datetime.now(timezone.utc),
         )
@@ -643,7 +643,7 @@ class TestTransactionDeletion:
             user_id=user.id,
             transaction_type=TransactionType.EXPENSE,
             amount=Decimal("75.00"),
-            category=TransactionCategory.ENTERTAINMENT,
+            category="entertainment",
             description="Movie tickets",
             transaction_date=datetime.now(timezone.utc),
         )
@@ -710,7 +710,7 @@ class TestTransactionDeletion:
             user_id=other_user.id,
             transaction_type=TransactionType.INCOME,
             amount=Decimal("5000.00"),
-            category=TransactionCategory.GIFT,
+            category="gift",
             description="Gift",
             transaction_date=datetime.now(timezone.utc),
         )
@@ -767,7 +767,7 @@ class TestTransactionAuthorization:
                     user_id=user.id,
                     transaction_type=TransactionType.EXPENSE,
                     amount=Decimal("50.00"),
-                    category=TransactionCategory.GROCERIES,
+                    category="groceries",
                     description=f"Transaction {i+1}",
                     transaction_date=datetime.now(timezone.utc),
                 )

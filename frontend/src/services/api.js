@@ -158,6 +158,49 @@ class ApiClient {
     return this.request(endpoint, { method: 'DELETE', ...config });
   }
 
+  async uploadFile(endpoint, file, config = {}) {
+    const { skipAuth, isRetry, ...requestConfig } = config;
+
+    const url = `${this.baseUrl}${endpoint}`;
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const headers = {};
+
+    // Add auth token if available and not skipped
+    if (!skipAuth) {
+      const token = this.getAuthToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      headers,
+      ...requestConfig,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
+
+      // Handle 401 - try to refresh token (only once)
+      if (response.status === 401 && !skipAuth && !isRetry) {
+        const refreshed = await this.tryRefreshToken();
+        if (refreshed) {
+          return this.uploadFile(endpoint, file, { ...config, isRetry: true });
+        }
+        this.handleAuthFailure();
+        throw new Error('Session expired. Please login again.');
+      }
+
+      throw new Error(error.detail || error.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
   // Auth-specific methods
   async login(email, password) {
     const response = await this.post('/auth/login', { email, password }, { skipAuth: true });

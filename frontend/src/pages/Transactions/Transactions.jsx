@@ -23,11 +23,14 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Paper,
+  Alert,
+  CircularProgress,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
 const initialForm = {
   amount: '',
@@ -36,28 +39,12 @@ const initialForm = {
   transaction_date: '',
 };
 
-const expenseCategories = [
-  'housing',
-  'utilities',
-  'groceries',
-  'transportation',
-  'healthcare',
-  'entertainment',
-  'dining',
-  'shopping',
-  'education',
-  'insurance',
-  'savings',
-  'debt_payment',
-  'other_expense',
-];
-
-const incomeCategories = ['salary', 'freelance', 'investment', 'gift', 'other_income'];
-
 export function Transactions() {
   const [searchQuery, setSearchQuery] = useState('');
   const [transactionType, setTransactionType] = useState(''); // '' for all, 'expense' or 'income'
-  const [dateFilter, setDateFilter] = useState('month');
+  const [dateFilter, setDateFilter] = useState('all'); // Default to showing all transactions
+  const [selectedYear, setSelectedYear] = useState(''); // '' for all years
+  const [selectedMonth, setSelectedMonth] = useState(''); // '' for all months (0-11 when selected)
   const [sortBy, setSortBy] = useState('date');
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -68,47 +55,29 @@ export function Transactions() {
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [formTransactionType, setFormTransactionType] = useState('expense'); // For the add form
+  const [openExcelDialog, setOpenExcelDialog] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState(null);
+  const [uploadError, setUploadError] = useState(null);
+  const [expenseCategories, setExpenseCategories] = useState([]);
+  const [incomeCategories, setIncomeCategories] = useState([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
 
-  // Get date range based on filter
-  const getDateRange = () => {
-    const today = new Date();
-    const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth();
+  // Get available years from transactions
+  const availableYears = [...new Set(transactions.map(t => new Date(t.transaction_date).getFullYear()))].sort((a, b) => b - a);
+  
+  // Get available months for selected year
+  const availableMonths = selectedYear 
+    ? [...new Set(transactions
+        .filter(t => new Date(t.transaction_date).getFullYear() === parseInt(selectedYear))
+        .map(t => new Date(t.transaction_date).getMonth())
+      )].sort((a, b) => a - b)
+    : [];
 
-    switch (dateFilter) {
-      case 'day':
-        // Today only
-        return {
-          start: new Date(currentYear, currentMonth, today.getDate()),
-          end: new Date(currentYear, currentMonth, today.getDate() + 1),
-        };
-      case 'week':
-        // Last 7 days
-        const weekStart = new Date(today);
-        weekStart.setDate(today.getDate() - 7);
-        return { start: weekStart, end: today };
-      case 'month':
-        // Current month
-        return {
-          start: new Date(currentYear, currentMonth, 1),
-          end: new Date(currentYear, currentMonth + 1, 0),
-        };
-      case 'year':
-        // Current year
-        return {
-          start: new Date(currentYear, 0, 1),
-          end: new Date(currentYear, 11, 31),
-        };
-      case 'period':
-        // Custom period
-        return {
-          start: customStartDate ? new Date(customStartDate) : null,
-          end: customEndDate ? new Date(customEndDate) : null,
-        };
-      default:
-        return null;
-    }
-  };
+  // Month names for display
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                      'July', 'August', 'September', 'October', 'November', 'December'];
 
   // Fetch transactions from backend
   useEffect(() => {
@@ -116,16 +85,50 @@ export function Transactions() {
       setLoading(true);
       setError(null);
       try {
-        const data = await apiClient.get('/transactions');
+        // Fetch with a large limit to get all transactions (up to 1000)
+        const data = await apiClient.get('/transactions', { skip: 0, limit: 1000 });
+        console.log('Fetched transactions:', data);
+        console.log('Number of transactions:', Array.isArray(data) ? data.length : 'Not an array');
+        if (Array.isArray(data) && data.length > 0) {
+          console.log('First transaction:', data[0]);
+        }
         setTransactions(data || []);
       } catch (err) {
         setError('Failed to load transactions');
-        console.error(err);
+        console.error('Error fetching transactions:', err);
       } finally {
         setLoading(false);
       }
     };
     fetchTransactions();
+  }, []);
+
+  // Fetch categories from backend
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        setLoadingCategories(true);
+        const expenseData = await apiClient.get('/categories', { transaction_type: 'expense' });
+        const incomeData = await apiClient.get('/categories', { transaction_type: 'income' });
+        
+        // Extract just the category names
+        const expenseNames = (expenseData || []).map(cat => cat.name);
+        const incomeNames = (incomeData || []).map(cat => cat.name);
+        
+        setExpenseCategories(expenseNames);
+        setIncomeCategories(incomeNames);
+        console.log('Loaded expense categories:', expenseNames);
+        console.log('Loaded income categories:', incomeNames);
+      } catch (err) {
+        console.error('Error fetching categories:', err);
+        // Fallback to empty arrays if fetch fails
+        setExpenseCategories([]);
+        setIncomeCategories([]);
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+    fetchCategories();
   }, []);
 
   // Filter transactions by date, search, and type
@@ -139,17 +142,43 @@ export function Transactions() {
     // Transaction type filter
     const matchesType = !transactionType || t.transaction_type === transactionType;
 
-    // Date filter
+    // Year/Month filter (new approach - filter by actual transaction years/months)
     const transactionDate = new Date(t.transaction_date);
-    const dateRange = getDateRange();
-    let matchesDate = true;
-
-    if (dateRange?.start && dateRange?.end) {
-      matchesDate = transactionDate >= dateRange.start && transactionDate <= dateRange.end;
+    const txYear = transactionDate.getFullYear();
+    const txMonth = transactionDate.getMonth();
+    
+    let matchesYear = true;
+    let matchesMonth = true;
+    
+    if (selectedYear) {
+      matchesYear = txYear === parseInt(selectedYear);
+    }
+    
+    if (selectedMonth !== '') {
+      matchesMonth = txMonth === parseInt(selectedMonth);
     }
 
-    return matchesSearch && matchesDate && matchesType;
+    // Custom date range filter (Period)
+    let matchesDateRange = true;
+    if (dateFilter === 'period' && customStartDate && customEndDate) {
+      const startDate = new Date(customStartDate);
+      const endDate = new Date(customEndDate);
+      endDate.setDate(endDate.getDate() + 1); // Include end date
+      transactionDate.setHours(0, 0, 0, 0);
+      matchesDateRange = transactionDate >= startDate && transactionDate < endDate;
+    }
+
+    return matchesSearch && matchesType && matchesYear && matchesMonth && matchesDateRange;
   });
+
+  // Log filtered results
+  useEffect(() => {
+    console.log(`Filtered transactions: ${filteredTransactions.length}/${transactions.length}`);
+    console.log('Filters:', { selectedYear, selectedMonth, transactionType, searchQuery, dateFilter });
+    if (filteredTransactions.length > 0) {
+      console.log('Sample filtered transaction:', filteredTransactions[0]);
+    }
+  }, [filteredTransactions, selectedYear, selectedMonth, transactionType, searchQuery, transactions, dateFilter]);
 
   // Sort transactions
   const sortedTransactions = [...filteredTransactions].sort((a, b) => {
@@ -179,6 +208,47 @@ export function Transactions() {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Excel upload handlers
+  const handleOpenExcelDialog = () => {
+    setOpenExcelDialog(true);
+    setUploadResult(null);
+    setUploadError(null);
+  };
+
+  const handleCloseExcelDialog = () => {
+    setOpenExcelDialog(false);
+    setSelectedFile(null);
+    setUploadResult(null);
+    setUploadError(null);
+  };
+
+  const handleFileSelect = (event) => {
+    setSelectedFile(event.target.files[0]);
+    setUploadResult(null);
+    setUploadError(null);
+  };
+
+  const handleUploadFile = async () => {
+    if (!selectedFile) return;
+
+    setUploading(true);
+    setUploadError(null);
+    setUploadResult(null);
+
+    try {
+      const result = await apiClient.uploadFile('/upload/excel', selectedFile);
+      setUploadResult(result);
+      setSelectedFile(null);
+      // Refresh transactions list after successful upload
+      const data = await apiClient.get('/transactions');
+      setTransactions(data || []);
+    } catch (error) {
+      setUploadError(error.message || 'Failed to upload file');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   // Add Transaction handler
   const handleAddTransaction = async () => {
     setFormError(null);
@@ -189,24 +259,33 @@ export function Transactions() {
     }
 
     const { amount, category, description, transaction_date } = form;
+    
+    // Convert date string to ISO format datetime
+    const dateObj = new Date(transaction_date + 'T00:00:00Z');
+    
     const newTransaction = {
       amount: parseFloat(amount),
       category,
-      description,
-      transaction_date,
+      description: description || null,
+      transaction_date: dateObj.toISOString(),
       transaction_type: formTransactionType,
     };
 
-    try {
-      await apiClient.post('/transactions', newTransaction);
+    console.log('Adding transaction:', newTransaction);
 
-      // Refresh list from unified endpoint
-      const data = await apiClient.get('/transactions');
+    try {
+      const response = await apiClient.post('/transactions', newTransaction);
+      console.log('Transaction added successfully:', response);
+
+      // Refresh list with pagination parameters
+      const data = await apiClient.get('/transactions', { skip: 0, limit: 1000 });
+      console.log('Transactions refreshed:', data);
       setTransactions(data || []);
+      setForm(initialForm); // Reset form
       handleClose();
     } catch (err) {
-      setFormError('Failed to add transaction');
-      console.error(err);
+      setFormError('Failed to add transaction: ' + (err.message || 'Unknown error'));
+      console.error('Error adding transaction:', err);
     }
   };
 
@@ -225,15 +304,47 @@ export function Transactions() {
             View and manage your financial transactions
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpen} size="large">
-          Add Transaction
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpen} size="large">
+            Add Transaction
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<CloudUploadIcon />}
+            onClick={handleOpenExcelDialog}
+            size="large"
+          >
+            Upload Excel
+          </Button>
+        </Box>
       </Box>
 
       {/* Add Transaction Modal */}
       <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
         <DialogTitle>Add {formTransactionType === 'expense' ? 'Expense' : 'Income'}</DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              Transaction Type
+            </Typography>
+            <ToggleButtonGroup
+              value={formTransactionType}
+              exclusive
+              onChange={(e, newValue) => {
+                if (newValue) setFormTransactionType(newValue);
+              }}
+              aria-label="transaction form type"
+              fullWidth
+              size="small"
+            >
+              <ToggleButton value="expense" aria-label="expense">
+                <Typography variant="button">Expense</Typography>
+              </ToggleButton>
+              <ToggleButton value="income" aria-label="income">
+                <Typography variant="button">Income</Typography>
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
           <TextField
             margin="normal"
             label="Amount"
@@ -303,29 +414,6 @@ export function Transactions() {
 
       {/* View Type Toggle & Filters */}
       <Paper sx={{ p: 3, mb: 3, bgcolor: 'background.paper' }}>
-        {/* Toggle for Add Form Type */}
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600 }}>
-            Add Transaction Type
-          </Typography>
-          <ToggleButtonGroup
-            value={formTransactionType}
-            exclusive
-            onChange={(e, newValue) => {
-              if (newValue) setFormTransactionType(newValue);
-            }}
-            aria-label="transaction form type"
-            fullWidth
-          >
-            <ToggleButton value="expense" aria-label="expense">
-              <Typography variant="button">Expense</Typography>
-            </ToggleButton>
-            <ToggleButton value="income" aria-label="income">
-              <Typography variant="button">Income</Typography>
-            </ToggleButton>
-          </ToggleButtonGroup>
-        </Box>
-
         {/* Filter by Type */}
         <Box sx={{ mb: 3 }}>
           <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600 }}>
@@ -355,54 +443,91 @@ export function Transactions() {
         {/* Date Range Filters */}
         <Box>
           <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600 }}>
-            Filter by Period
+            Filter by Year
           </Typography>
-          <ToggleButtonGroup
-            value={dateFilter}
-            exclusive
-            onChange={(e, newValue) => {
-              if (newValue) setDateFilter(newValue);
-            }}
-            aria-label="date filter"
+          <TextField
+            select
             fullWidth
+            size="small"
+            value={selectedYear}
+            onChange={(e) => {
+              setSelectedYear(e.target.value);
+              setSelectedMonth(''); // Reset month when year changes
+            }}
+            sx={{ mb: 2 }}
           >
-            <ToggleButton value="day" aria-label="day">
-              <Typography variant="body2">Day</Typography>
-            </ToggleButton>
-            <ToggleButton value="week" aria-label="week">
-              <Typography variant="body2">Week</Typography>
-            </ToggleButton>
-            <ToggleButton value="month" aria-label="month">
-              <Typography variant="body2">Month</Typography>
-            </ToggleButton>
-            <ToggleButton value="year" aria-label="year">
-              <Typography variant="body2">Year</Typography>
-            </ToggleButton>
-            <ToggleButton value="period" aria-label="period">
-              <Typography variant="body2">Period</Typography>
-            </ToggleButton>
-          </ToggleButtonGroup>
+            <MenuItem value="">All Years</MenuItem>
+            {availableYears.map((year) => (
+              <MenuItem key={year} value={year.toString()}>
+                {year}
+              </MenuItem>
+            ))}
+          </TextField>
 
-          {/* Custom Period Date Pickers */}
-          {dateFilter === 'period' && (
-            <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+          {selectedYear && (
+            <>
+              <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600 }}>
+                Filter by Month
+              </Typography>
               <TextField
-                label="Start Date"
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                flex={1}
-              />
-              <TextField
-                label="End Date"
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                flex={1}
-              />
-            </Box>
+                select
+                fullWidth
+                size="small"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                sx={{ mb: 2 }}
+              >
+                <MenuItem value="">All Months</MenuItem>
+                {availableMonths.map((month) => (
+                  <MenuItem key={month} value={month.toString()}>
+                    {monthNames[month]}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </>
+          )}
+
+          <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600 }}>
+            Custom Date Range
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <TextField
+              label="Start Date"
+              type="date"
+              size="small"
+              value={customStartDate}
+              onChange={(e) => {
+                setCustomStartDate(e.target.value);
+                setDateFilter('period');
+              }}
+              InputLabelProps={{ shrink: true }}
+              sx={{ flex: 1 }}
+            />
+            <TextField
+              label="End Date"
+              type="date"
+              size="small"
+              value={customEndDate}
+              onChange={(e) => {
+                setCustomEndDate(e.target.value);
+                setDateFilter('period');
+              }}
+              InputLabelProps={{ shrink: true }}
+              sx={{ flex: 1 }}
+            />
+          </Box>
+          {(customStartDate || customEndDate) && (
+            <Button
+              size="small"
+              sx={{ mt: 1 }}
+              onClick={() => {
+                setCustomStartDate('');
+                setCustomEndDate('');
+                setDateFilter('all');
+              }}
+            >
+              Clear Date Range
+            </Button>
           )}
         </Box>
       </Paper>
@@ -530,7 +655,7 @@ export function Transactions() {
                     <TableCell
                       align="right"
                       sx={{
-                        color: viewType === 'income' ? 'success.main' : 'error.main',
+                        color: transaction.transaction_type === 'income' ? 'success.main' : 'error.main',
                         fontWeight: 600,
                       }}
                     >
@@ -551,6 +676,71 @@ export function Transactions() {
           </TableContainer>
         )}
       </Card>
+
+      {/* Excel Upload Dialog */}
+      <Dialog open={openExcelDialog} onClose={handleCloseExcelDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>Upload Excel File</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          {uploadError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {uploadError}
+            </Alert>
+          )}
+          
+          {uploadResult && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                <strong>{uploadResult.message}</strong>
+              </Typography>
+              <Typography variant="body2">
+                Expenses imported: {uploadResult.expenses_imported}
+              </Typography>
+              <Typography variant="body2">
+                Income imported: {uploadResult.income_imported}
+              </Typography>
+              <Typography variant="body2">
+                Total: {uploadResult.total_imported} transactions
+              </Typography>
+              {uploadResult.errors?.length > 0 && (
+                <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
+                  {uploadResult.errors.length} row(s) had errors
+                </Typography>
+              )}
+            </Alert>
+          )}
+
+          <TextField
+            type="file"
+            inputProps={{ accept: '.xlsx,.xls' }}
+            fullWidth
+            onChange={handleFileSelect}
+            InputLabelProps={{ shrink: true }}
+            label="Choose Excel File"
+            variant="outlined"
+            disabled={uploading}
+          />
+          {selectedFile && (
+            <Typography variant="body2" sx={{ mt: 1, color: 'success.main' }}>
+              ✓ {selectedFile.name}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={handleCloseExcelDialog} disabled={uploading}>
+            {uploadResult ? 'Close' : 'Cancel'}
+          </Button>
+          {!uploadResult && (
+            <Button
+              onClick={handleUploadFile}
+              variant="contained"
+              disabled={!selectedFile || uploading}
+              startIcon={uploading ? <CircularProgress size={20} color="inherit" /> : null}
+            >
+              {uploading ? 'Uploading...' : 'Upload'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

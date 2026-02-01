@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -7,21 +8,25 @@ import {
   Grid,
   LinearProgress,
   IconButton,
+  CircularProgress,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import { apiClient } from '../../services/api';
 
-const budgetCategories = [
-  { id: '1', name: 'Housing', budgeted: 1500, spent: 1200, color: '#1976d2' },
-  { id: '2', name: 'Food & Dining', budgeted: 800, spent: 650, color: '#2e7d32' },
-  { id: '3', name: 'Transportation', budgeted: 400, spent: 380, color: '#ed6c02' },
-  { id: '4', name: 'Utilities', budgeted: 300, spent: 275, color: '#9c27b0' },
-  { id: '5', name: 'Entertainment', budgeted: 200, spent: 180, color: '#d32f2f' },
-  { id: '6', name: 'Healthcare', budgeted: 200, spent: 50, color: '#00bcd4' },
-  { id: '7', name: 'Shopping', budgeted: 300, spent: 420, color: '#ff9800' },
-  { id: '8', name: 'Savings', budgeted: 500, spent: 500, color: '#4caf50' },
+// Color palette for categories
+const categoryColors = [
+  '#1976d2', '#2e7d32', '#ed6c02', '#9c27b0',
+  '#d32f2f', '#00bcd4', '#ff9800', '#4caf50',
+  '#f57c00', '#c2185b', '#0097a7', '#7b1fa2',
 ];
+
+// Format category name for display
+const formatCategoryName = (cat) => cat.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+
+// Get color for category based on its name hash
+const getCategoryColor = (categoryName, index) => categoryColors[index % categoryColors.length];
 
 function BudgetCategoryCard({ category }) {
   const percentage = (category.spent / category.budgeted) * 100;
@@ -76,8 +81,47 @@ function BudgetCategoryCard({ category }) {
 }
 
 export function Budget() {
-  const totalBudgeted = budgetCategories.reduce((sum, cat) => sum + cat.budgeted, 0);
-  const totalSpent = budgetCategories.reduce((sum, cat) => sum + cat.spent, 0);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetchExpenseCategories();
+  }, []);
+
+  const fetchExpenseCategories = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      // Fetch only expense categories
+      const response = await apiClient.get('/categories', { transaction_type: 'expense' });
+      const categoryList = (response || []).map((cat, index) => ({
+        id: cat.name,
+        name: formatCategoryName(cat.name),
+        originalName: cat.name,
+        budgeted: 0, // These would come from budget settings
+        spent: 0,   // These would be calculated from transactions
+        color: getCategoryColor(cat.name, index),
+      }));
+      setCategories(categoryList);
+    } catch (err) {
+      console.error('Failed to fetch categories:', err);
+      setError('Failed to load categories');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const totalBudgeted = categories.reduce((sum, cat) => sum + cat.budgeted, 0);
+  const totalSpent = categories.reduce((sum, cat) => sum + cat.spent, 0);
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -89,10 +133,11 @@ export function Budget() {
           <Typography variant="body1" color="text.secondary">
             Manage your monthly budget categories
           </Typography>
+          {error && <Typography variant="body2" sx={{ color: 'error.main', mt: 1 }}>{error}</Typography>}
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />}>
-          Add Category
-        </Button>
+          <Button variant="contained" startIcon={<AddIcon />}>
+            Add Category
+          </Button>
       </Box>
 
       {/* Summary Card */}
@@ -128,7 +173,7 @@ export function Budget() {
 
       {/* Budget Categories */}
       <Grid container spacing={2}>
-        {budgetCategories.map((category) => (
+        {categories.map((category) => (
           <Grid size={{ xs: 12, md: 6 }} key={category.id}>
             <BudgetCategoryCard category={category} />
           </Grid>

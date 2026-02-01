@@ -8,14 +8,14 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.models.transaction import TransactionCategory, TransactionType
+from src.models.transaction import TransactionType
 
 
 class TransactionBase(BaseModel):
     """Base transaction schema with common fields."""
 
     amount: Decimal = Field(..., gt=0, decimal_places=2)
-    category: TransactionCategory
+    category: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=500)
     transaction_date: datetime
 
@@ -31,7 +31,7 @@ class TransactionUpdate(BaseModel):
 
     amount: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
     transaction_type: Optional[TransactionType] = None
-    category: Optional[TransactionCategory] = None
+    category: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=500)
     merchant: Optional[str] = Field(None, max_length=255)
     transaction_date: Optional[datetime] = None
@@ -55,6 +55,6 @@ class TransactionFilter(BaseModel):
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     transaction_type: Optional[TransactionType] = None
-    category: Optional[TransactionCategory] = None
+    category: Optional[str] = Field(None, min_length=1, max_length=255)
     min_amount: Optional[Decimal] = None
     max_amount: Optional[Decimal] = None
