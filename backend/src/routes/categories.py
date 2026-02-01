@@ -2,9 +2,10 @@
 Transaction category routes.
 """
 
-from typing import Annotated, Optional
+from typing import Annotated, Optional, List
 
 from fastapi import APIRouter, Depends, Query, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +15,13 @@ from src.models.category import TransactionCategory
 router = APIRouter()
 
 
-@router.get("/", status_code=status.HTTP_200_OK)
+class CategoryResponse(BaseModel):
+    """Response model for category."""
+    name: str
+    type: str
+
+
+@router.get("/", status_code=status.HTTP_200_OK, response_model=List[CategoryResponse])
 async def get_categories(
     db: Annotated[AsyncSession, Depends(get_db)],
     transaction_type: Optional[str] = Query(None, description="Filter by transaction type: 'expense' or 'income'"),

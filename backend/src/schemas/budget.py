@@ -8,16 +8,14 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.models.budget import BudgetCategory, BudgetPeriod
-
 
 class BudgetBase(BaseModel):
     """Base budget schema with common fields."""
 
     name: str = Field(..., min_length=1, max_length=100)
-    category: BudgetCategory
+    category: str = Field(..., min_length=1, max_length=100)
     amount: Decimal = Field(..., gt=0, decimal_places=2)
-    period: BudgetPeriod = BudgetPeriod.MONTHLY
+    period: str = Field(default="monthly")
     start_date: datetime
     end_date: Optional[datetime] = None
 
@@ -32,10 +30,10 @@ class BudgetUpdate(BaseModel):
     """Schema for updating a budget."""
 
     name: Optional[str] = Field(None, min_length=1, max_length=100)
-    category: Optional[BudgetCategory] = None
+    category: Optional[str] = Field(None, min_length=1, max_length=100)
     amount: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
     spent: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
-    period: Optional[BudgetPeriod] = None
+    period: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
 

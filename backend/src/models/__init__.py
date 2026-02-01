@@ -2,7 +2,7 @@
 Database models package.
 """
 
-from src.models.budget import Budget, BudgetCategory
+from src.models.budget import Budget
 from src.models.category import TransactionCategory
 from src.models.goal import Goal
 from src.models.transaction import Transaction, TransactionType
@@ -14,6 +14,5 @@ __all__ = [
     "TransactionType",
     "TransactionCategory",
     "Budget",
-    "BudgetCategory",
     "Goal",
 ]
