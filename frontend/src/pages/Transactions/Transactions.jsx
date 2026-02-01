@@ -90,10 +90,12 @@ export function Transactions() {
       setFormError('Amount, category, and date are required.');
       return;
     }
+    const { amount, category, description, transaction_date } = form;
     const newTransaction = {
-      ...form,
-      amount: parseFloat(form.amount),
-      transaction_type: viewType,
+      amount: parseFloat(amount),
+      category,
+      description,
+      transaction_date,
     };
     try {
       const endpoint = viewType === 'expense' ? '/expense' : '/income';

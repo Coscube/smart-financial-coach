@@ -73,16 +73,25 @@ export function Signup() {
         last_name: formData.lastName,
       });
 
-      // Redirect to login with success message
-      navigate('/login', {
-        replace: true,
-        state: { message: 'Account created successfully! Please login.' },
-      });
+      // Auto-login after successful registration
+      await apiClient.login(formData.email, formData.password);
+
+      // Fetch user profile
+      const user = await apiClient.get('/users/me');
+      setUser(user);
+
+      // Redirect to dashboard
+      navigate('/', { replace: true });
     } catch (err) {
       if (err.name === 'TypeError') {
         setError('Network error, please try again.');
       } else {
-        setError(err.message || 'Registration failed. Please try again.');
+        // Check if error is about duplicate email
+        if (err.message.includes('already registered')) {
+          setError('Email is already registered. Please use a different email or try logging in.');
+        } else {
+          setError(err.message || 'Registration failed. Please try again.');
+        }
       }
     } finally {
       setIsLoading(false);

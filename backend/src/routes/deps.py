@@ -1,10 +1,6 @@
-"""
-Authentication dependencies and utilities.
-"""
-
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,17 +13,39 @@ from src.services.user import UserService
 security = HTTPBearer()
 
 
-# --- MOCK USER FOR DEVELOPMENT ---
-from types import SimpleNamespace
+# Real authentication dependency
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    token = credentials.credentials
 
-# async def get_current_user(*args, **kwargs):
-#     """Mocked user for development: always returns a fake user object."""
-#     return SimpleNamespace(id=1, email="mock@user.com", is_active=True)
+    # Decode and validate the token
+    payload = AuthService.decode_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
+    # Check that it's an access token (not a refresh token)
+    if payload.type != "access":
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token type. Access token required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-async def get_current_user():
-    """Mocked user for development: always returns a fake user object."""
-    return SimpleNamespace(id=1, email="mock@user.com", is_active=True)
+    # Get the user
+    user = await UserService(db).get_by_id(payload.sub)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not user.is_active:
+        raise HTTPException(status_code=401, detail="User is inactive")
+
+    return user
 
 
 # Type alias for current user dependency

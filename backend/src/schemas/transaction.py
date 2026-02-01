@@ -15,10 +15,8 @@ class TransactionBase(BaseModel):
     """Base transaction schema with common fields."""
 
     amount: Decimal = Field(..., gt=0, decimal_places=2)
-    transaction_type: TransactionType
     category: TransactionCategory
     description: Optional[str] = Field(None, max_length=500)
-    merchant: Optional[str] = Field(None, max_length=255)
     transaction_date: datetime
 
 

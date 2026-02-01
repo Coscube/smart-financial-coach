@@ -40,7 +40,7 @@ class AuthService:
             minutes=settings.jwt_access_token_expire_minutes
         )
         payload = {
-            "sub": user_id,
+            "sub": str(user_id),  # JWT requires sub to be a string
             "exp": expire,
             "type": "access",
         }
@@ -51,7 +51,7 @@ class AuthService:
         """Create a JWT refresh token."""
         expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_token_expire_days)
         payload = {
-            "sub": user_id,
+            "sub": str(user_id),  # JWT requires sub to be a string
             "exp": expire,
             "type": "refresh",
         }
@@ -73,7 +73,7 @@ class AuthService:
                 token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
             )
             return TokenPayload(
-                sub=payload["sub"],
+                sub=int(payload["sub"]),  # Convert back to int from string
                 exp=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
                 type=payload["type"],
             )

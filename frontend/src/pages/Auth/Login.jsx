@@ -59,7 +59,13 @@ export function Login() {
       if (err.name === 'TypeError') {
         setError('Network error, please try again.');
       } else {
-        setError(err.message || 'Invalid email or password');
+        // Provide more specific error messages
+        const errorMessage = err.message || 'Invalid email or password';
+        if (errorMessage.includes('Invalid email or password')) {
+          setError('Email or password is incorrect. Please try again.');
+        } else {
+          setError(errorMessage);
+        }
       }
     } finally {
       setIsLoading(false);

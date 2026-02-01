@@ -55,6 +55,12 @@ class UserLogin(BaseModel):
     password: str
 
 
+class RefreshTokenRequest(BaseModel):
+    """Schema for refresh token request."""
+
+    refresh_token: str
+
+
 class Token(BaseModel):
     """Schema for JWT token response."""
 

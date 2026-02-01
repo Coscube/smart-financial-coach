@@ -95,11 +95,14 @@ class ApiClient {
     this.isRefreshing = true;
     this.refreshPromise = (async () => {
       try {
-        const response = await this.post('/auth/refresh', null, {
-          params: { refresh_token: refreshToken },
-          skipAuth: true,
-          isRetry: true, // Prevent infinite loop
-        });
+        const response = await this.post(
+          '/auth/refresh',
+          { refresh_token: refreshToken },
+          {
+            skipAuth: true,
+            isRetry: true, // Prevent infinite loop
+          }
+        );
         this.setAuthToken(response.access_token);
         this.setRefreshToken(response.refresh_token);
         return true;
@@ -168,7 +171,15 @@ class ApiClient {
   }
 
   async logout() {
-    this.clearTokens();
+    try {
+      // Call backend logout endpoint
+      await this.post('/auth/logout', null, { skipAuth: false });
+    } catch {
+      // Even if the backend call fails, clear local tokens
+      // This handles cases where tokens are already expired
+    } finally {
+      this.clearTokens();
+    }
   }
 
   async refreshToken() {
@@ -176,10 +187,13 @@ class ApiClient {
     if (!refreshToken) {
       throw new Error('No refresh token available');
     }
-    const response = await this.post('/auth/refresh', null, {
-      params: { refresh_token: refreshToken },
-      skipAuth: true,
-    });
+    const response = await this.post(
+      '/auth/refresh',
+      { refresh_token: refreshToken },
+      {
+        skipAuth: true,
+      }
+    );
     this.setAuthToken(response.access_token);
     this.setRefreshToken(response.refresh_token);
     return response;
