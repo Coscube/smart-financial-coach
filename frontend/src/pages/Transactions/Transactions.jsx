@@ -62,7 +62,11 @@ export function Transactions() {
   const [uploadError, setUploadError] = useState(null);
   const [expenseCategories, setExpenseCategories] = useState([]);
   const [incomeCategories, setIncomeCategories] = useState([]);
-  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [_loadingCategories, setLoadingCategories] = useState(true);
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [transactionToDelete, setTransactionToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Get available years from transactions
   const availableYears = [
@@ -223,7 +227,9 @@ export function Transactions() {
 
   // Modal handlers
   const handleOpen = () => {
+    setEditingTransaction(null);
     setForm(initialForm);
+    setFormTransactionType('expense');
     setFormError(null);
     setOpen(true);
   };
@@ -320,6 +326,84 @@ export function Transactions() {
     }
   };
 
+  // Edit Transaction handler
+  const handleEditClick = (transaction) => {
+    setEditingTransaction(transaction);
+    setForm({
+      amount: transaction.amount.toString(),
+      category: transaction.category,
+      description: transaction.description || '',
+      transaction_date: transaction.transaction_date.split('T')[0],
+    });
+    setFormTransactionType(transaction.transaction_type);
+    setFormError(null);
+    setOpen(true);
+  };
+
+  // Update Transaction handler
+  const handleUpdateTransaction = async () => {
+    setFormError(null);
+
+    if (!form.amount || !form.category || !form.transaction_date) {
+      setFormError('Amount, category, and date are required.');
+      return;
+    }
+
+    const { amount, category, description, transaction_date } = form;
+    const dateObj = new Date(transaction_date + 'T00:00:00Z');
+
+    const updatedTransaction = {
+      amount: parseFloat(amount),
+      category,
+      description: description || null,
+      transaction_date: dateObj.toISOString(),
+      transaction_type: formTransactionType,
+    };
+
+    try {
+      await apiClient.put(`/transactions/${editingTransaction.id}`, updatedTransaction);
+      // Refresh list
+      const data = await apiClient.get('/transactions', { skip: 0, limit: 1000 });
+      setTransactions(data || []);
+      setForm(initialForm);
+      setEditingTransaction(null);
+      handleClose();
+    } catch (err) {
+      setFormError('Failed to update transaction: ' + (err.message || 'Unknown error'));
+      console.error('Error updating transaction:', err);
+    }
+  };
+
+  // Delete confirmation handlers
+  const handleDeleteClick = (transaction) => {
+    setTransactionToDelete(transaction);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirmOpen(false);
+    setTransactionToDelete(null);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!transactionToDelete) return;
+
+    setDeleting(true);
+    try {
+      await apiClient.delete(`/transactions/${transactionToDelete.id}`);
+      // Refresh list
+      const data = await apiClient.get('/transactions', { skip: 0, limit: 1000 });
+      setTransactions(data || []);
+      setDeleteConfirmOpen(false);
+      setTransactionToDelete(null);
+    } catch (err) {
+      console.error('Error deleting transaction:', err);
+      setError('Failed to delete transaction: ' + (err.message || 'Unknown error'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // Format category for display
   const formatCategory = (cat) => cat.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 
@@ -350,9 +434,12 @@ export function Transactions() {
         </Box>
       </Box>
 
-      {/* Add Transaction Modal */}
+      {/* Add/Edit Transaction Modal */}
       <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-        <DialogTitle>Add {formTransactionType === 'expense' ? 'Expense' : 'Income'}</DialogTitle>
+        <DialogTitle>
+          {editingTransaction ? 'Edit' : 'Add'}{' '}
+          {formTransactionType === 'expense' ? 'Expense' : 'Income'}
+        </DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <Box sx={{ mb: 3 }}>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -437,8 +524,45 @@ export function Transactions() {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleClose}>Cancel</Button>
-          <Button onClick={handleAddTransaction} variant="contained">
-            Add
+          <Button
+            onClick={editingTransaction ? handleUpdateTransaction : handleAddTransaction}
+            variant="contained"
+          >
+            {editingTransaction ? 'Update' : 'Add'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onClose={handleDeleteCancel} maxWidth="xs">
+        <DialogTitle>Delete Transaction</DialogTitle>
+        <DialogContent>
+          <Typography>Are you sure you want to delete this transaction?</Typography>
+          {transactionToDelete && (
+            <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+              <Typography variant="body2">
+                <strong>Amount:</strong> ${parseFloat(transactionToDelete.amount).toFixed(2)}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Category:</strong> {formatCategory(transactionToDelete.category)}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Description:</strong> {transactionToDelete.description || 'N/A'}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDeleteConfirm}
+            variant="contained"
+            color="error"
+            disabled={deleting}
+          >
+            {deleting ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -698,10 +822,19 @@ export function Transactions() {
                       ${parseFloat(transaction.amount).toFixed(2)}
                     </TableCell>
                     <TableCell align="center">
-                      <IconButton size="small" aria-label="edit">
+                      <IconButton
+                        size="small"
+                        aria-label="edit"
+                        onClick={() => handleEditClick(transaction)}
+                      >
                         <EditIcon fontSize="small" />
                       </IconButton>
-                      <IconButton size="small" aria-label="delete">
+                      <IconButton
+                        size="small"
+                        aria-label="delete"
+                        onClick={() => handleDeleteClick(transaction)}
+                        color="error"
+                      >
                         <DeleteIcon fontSize="small" />
                       </IconButton>
                     </TableCell>
