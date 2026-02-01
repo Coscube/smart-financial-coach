@@ -1,0 +1,94 @@
+[tool.poetry]
+name = "smart-financial-coach-backend"
+version = "0.1.0"
+description = "Smart Financial Coach API - Backend service for personal finance management"
+readme = "README.md"
+license = "MIT"
+authors = ["Smart Financial Coach Team"]
+packages = [{ include = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# Core Framework
+fastapi = "0.115.8"
+uvicorn = { version = "0.34.0", extras = ["standard"] }
+pydantic = "2.10.6"
+pydantic-settings = "^2.0.0"
+starlette = "0.45.3"
+
+# Database
+sqlalchemy = "2.0.38"
+asyncpg = "0.30.0"
+psycopg2-binary = "^2.9.10"
+aiosqlite = "^0.19.0"
+
+# API & Communication
+httpx = "0.28.1"
+requests = "2.32.3"
+
+# Authentication & Security
+pyjwt = "2.10.1"
+cryptography = "44.0.2"
+passlib = { version = "^1.7.4", extras = ["bcrypt"] }
+
+# Utilities
+python-dotenv = "1.0.1"
+pyyaml = "6.0.2"
+jinja2 = "3.1.5"
+
+[tool.poetry.group.dev.dependencies]
+# Testing
+pytest = "8.3.5"
+pytest-cov = "6.0.0"
+pytest-asyncio = "^0.23.0"
+coverage = "7.7.1"
+responses = "0.25.7"
+
+# Linting
+flake8 = "7.1.2"
+
+# Formatting
+black = "^24.0.0"
+isort = "^5.13.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.venv
+    | __pycache__
+    | migrations
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip = [".git", ".venv", "__pycache__"]

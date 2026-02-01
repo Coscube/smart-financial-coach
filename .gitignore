@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.env
+*.egg
+.eggs/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+*.local
+.env.local
+.env.*.local
+
+# Poetry
+poetry.lock
+
+# Frontend specific
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+
+# Backend specific
+backend/.venv/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/htmlcov/
+backend/.coverage
+backend/*.db
