@@ -1,270 +1,385 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Card,
   CardContent,
-  Typography,
   Grid,
+  Typography,
+  LinearProgress,
   CircularProgress,
+  Chip,
+  Button,
+  Avatar,
+  List,
+  ListItem,
+  ListItemAvatar,
+  ListItemText,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  TablePagination,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  Alert,
+  TextField,
+  InputAdornment,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import SavingsIcon from '@mui/icons-material/Savings';
-import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
-import {
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  LineChart,
-  Line,
-  ComposedChart,
-} from 'recharts';
+import ReceiptIcon from '@mui/icons-material/Receipt';
+import LightbulbIcon from '@mui/icons-material/Lightbulb';
+import WarningIcon from '@mui/icons-material/Warning';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import RestaurantIcon from '@mui/icons-material/Restaurant';
+import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
+import HomeIcon from '@mui/icons-material/Home';
+import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
+import FlightIcon from '@mui/icons-material/Flight';
+import SchoolIcon from '@mui/icons-material/School';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import FlagIcon from '@mui/icons-material/Flag';
+import SearchIcon from '@mui/icons-material/Search';
 import { apiClient } from '../../services/api';
 
-// Color palette for charts
-const COLORS = [
-  '#1976d2', '#2e7d32', '#ed6c02', '#9c27b0', '#d32f2f',
-  '#00bcd4', '#ff9800', '#4caf50', '#f57c00', '#c2185b',
-  '#0097a7', '#7b1fa2', '#607d8b', '#795548',
-];
+const COLORS = ['#1976d2', '#2e7d32', '#ed6c02', '#9c27b0', '#d32f2f', '#00bcd4'];
 
-// Format category name for display
-const formatCategoryName = (cat) => 
-  cat?.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()) || 'Unknown';
-
-// Format currency
-const formatCurrency = (value) => 
+const formatCurrency = (value) =>
   `$${Math.abs(value || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
-// Custom tooltip component
-const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    return (
-      <Box sx={{ bgcolor: 'background.paper', p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1, boxShadow: 2 }}>
-        <Typography variant="body2" fontWeight="bold" sx={{ mb: 1 }}>{label}</Typography>
-        {payload.map((entry, index) => (
-          <Typography key={index} variant="body2" sx={{ color: entry.color }}>
-            {entry.name}: {formatCurrency(entry.value)}
-          </Typography>
-        ))}
-      </Box>
-    );
-  }
-  return null;
+const formatCategoryName = (cat) =>
+  cat?.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()) || 'Other';
+
+// Category icon mapping
+const getCategoryIcon = (category) => {
+  const cat = category?.toLowerCase() || '';
+  if (cat.includes('food') || cat.includes('restaurant') || cat.includes('dining')) return <RestaurantIcon />;
+  if (cat.includes('transport') || cat.includes('car') || cat.includes('gas') || cat.includes('fuel')) return <DirectionsCarIcon />;
+  if (cat.includes('shop') || cat.includes('retail') || cat.includes('amazon')) return <ShoppingCartIcon />;
+  if (cat.includes('home') || cat.includes('rent') || cat.includes('mortgage') || cat.includes('housing')) return <HomeIcon />;
+  if (cat.includes('health') || cat.includes('medical') || cat.includes('pharmacy')) return <LocalHospitalIcon />;
+  if (cat.includes('travel') || cat.includes('flight') || cat.includes('hotel') || cat.includes('airport')) return <FlightIcon />;
+  if (cat.includes('education') || cat.includes('school') || cat.includes('tuition')) return <SchoolIcon />;
+  if (cat.includes('income') || cat.includes('salary') || cat.includes('payment')) return <AttachMoneyIcon />;
+  return <ReceiptIcon />;
 };
 
+// Financial Health Score Component
+function HealthScore({ score, label }) {
+  const getColor = (s) => {
+    if (s >= 80) return '#2e7d32';
+    if (s >= 60) return '#1976d2';
+    if (s >= 40) return '#ed6c02';
+    return '#d32f2f';
+  };
+
+  return (
+    <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+      <CircularProgress
+        variant="determinate"
+        value={score}
+        size={140}
+        thickness={4}
+        sx={{ color: getColor(score) }}
+      />
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          bottom: 0,
+          right: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Typography variant="h3" fontWeight="bold" color={getColor(score)}>
+          {score}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {label}
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
 export function Reports() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState([]);
-  const [selectedYear, setSelectedYear] = useState('all');
+  const [budgets, setBudgets] = useState([]);
+  const [goals, setGoals] = useState([]);
   
-  // Computed data
-  const [monthlyData, setMonthlyData] = useState([]);
-  const [yearlyData, setYearlyData] = useState([]);
-  const [categoryExpenses, setCategoryExpenses] = useState([]);
-  const [categoryIncome, setCategoryIncome] = useState([]);
-  const [weekdaySpending, setWeekdaySpending] = useState([]);
-  const [topMerchants, setTopMerchants] = useState([]);
-  const [monthOverMonth, setMonthOverMonth] = useState([]);
-  const [summary, setSummary] = useState({ income: 0, expenses: 0, savings: 0, avgMonthlyExpense: 0 });
+  // Pagination state
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+  
+  // Filter state
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Computed values
+  const [summary, setSummary] = useState({
+    thisMonthIncome: 0,
+    thisMonthExpenses: 0,
+    lastMonthIncome: 0,
+    lastMonthExpenses: 0,
+    totalSavings: 0,
+    healthScore: 0,
+  });
+  const [insights, setInsights] = useState([]);
 
   useEffect(() => {
-    fetchTransactions();
+    fetchAllData();
   }, []);
 
-  useEffect(() => {
-    if (transactions.length > 0) {
-      processData();
-    }
-  }, [transactions, selectedYear]);
-
-  const fetchTransactions = async () => {
+  const fetchAllData = async () => {
     try {
       setLoading(true);
-      // Fetch multiple pages to get all transactions
-      let allTransactions = [];
-      let skip = 0;
-      const limit = 1000;
-      let hasMore = true;
       
-      while (hasMore) {
-        const response = await apiClient.get('/transactions', { skip, limit });
-        if (response && response.length > 0) {
-          allTransactions = [...allTransactions, ...response];
-          skip += limit;
-          hasMore = response.length === limit;
-        } else {
-          hasMore = false;
-        }
-      }
+      // Fetch all data in parallel
+      const [txResponse, budgetResponse, goalResponse] = await Promise.all([
+        fetchTransactions(),
+        apiClient.get('/budgets').catch(() => []),
+        apiClient.get('/goals').catch(() => []),
+      ]);
       
-      setTransactions(allTransactions);
+      setTransactions(txResponse);
+      setBudgets(budgetResponse || []);
+      setGoals(goalResponse || []);
+      
+      // Process data
+      processTransactions(txResponse, budgetResponse || [], goalResponse || []);
     } catch (err) {
-      console.error('Failed to fetch transactions:', err);
+      console.error('Failed to fetch data:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const processData = () => {
-    // Filter by year if selected
-    let filtered = transactions;
-    if (selectedYear !== 'all') {
-      filtered = transactions.filter(t => {
-        const year = new Date(t.transaction_date).getFullYear();
-        return year === parseInt(selectedYear);
-      });
+  const fetchTransactions = async () => {
+    let allTransactions = [];
+    let skip = 0;
+    const limit = 1000;
+    let hasMore = true;
+    
+    while (hasMore) {
+      const response = await apiClient.get('/transactions', { skip, limit });
+      if (response && response.length > 0) {
+        allTransactions = [...allTransactions, ...response];
+        skip += limit;
+        hasMore = response.length === limit;
+      } else {
+        hasMore = false;
+      }
     }
+    return allTransactions;
+  };
 
-    // Calculate monthly trends
-    const monthlyMap = {};
-    const categoryExpenseMap = {};
-    const categoryIncomeMap = {};
-    const weekdayMap = { Sun: 0, Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0 };
-    const weekdayCount = { Sun: 0, Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0 };
-    const merchantMap = {};
-    let totalIncome = 0;
-    let totalExpenses = 0;
+  const processTransactions = (txs, budgetData, goalData) => {
+    const now = new Date();
+    const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1);
+    const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
-    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    let thisMonthIncome = 0, thisMonthExpenses = 0;
+    let lastMonthIncome = 0, lastMonthExpenses = 0;
+    const categoryMap = {};
+    let totalIncome = 0, totalExpenses = 0;
 
-    filtered.forEach(t => {
+    txs.forEach(t => {
       const date = new Date(t.transaction_date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const amount = parseFloat(t.amount);
       const category = t.category || 'Other';
-      const weekday = weekdays[date.getDay()];
-      // Always use category as merchant
-      const merchant = t.category || 'Unknown';
-
-      if (!monthlyMap[monthKey]) {
-        monthlyMap[monthKey] = { month: monthKey, income: 0, expenses: 0 };
-      }
 
       if (t.transaction_type === 'income') {
-        monthlyMap[monthKey].income += amount;
         totalIncome += amount;
-        categoryIncomeMap[category] = (categoryIncomeMap[category] || 0) + amount;
+        if (monthKey === thisMonth) thisMonthIncome += amount;
+        if (monthKey === lastMonth) lastMonthIncome += amount;
       } else {
-        monthlyMap[monthKey].expenses += amount;
         totalExpenses += amount;
-        categoryExpenseMap[category] = (categoryExpenseMap[category] || 0) + amount;
-        weekdayMap[weekday] += amount;
-        weekdayCount[weekday] += 1;
-        merchantMap[merchant] = (merchantMap[merchant] || 0) + amount;
+        if (monthKey === thisMonth) thisMonthExpenses += amount;
+        if (monthKey === lastMonth) lastMonthExpenses += amount;
+        
+        // Track by category for this month
+        if (monthKey === thisMonth) {
+          categoryMap[category] = (categoryMap[category] || 0) + amount;
+        }
       }
     });
 
-    // Sort monthly data
-    const sortedMonthly = Object.values(monthlyMap)
-      .sort((a, b) => a.month.localeCompare(b.month))
-      .map(item => ({
-        ...item,
-        name: formatMonthLabel(item.month),
-        fullMonth: item.month,
-        savings: item.income - item.expenses,
-        savingsRate: item.income > 0 ? ((item.income - item.expenses) / item.income * 100).toFixed(1) : 0,
-      }));
+    // Calculate health score
+    const savingsRate = thisMonthIncome > 0 ? ((thisMonthIncome - thisMonthExpenses) / thisMonthIncome) * 100 : 0;
+    const budgetAdherence = calculateBudgetAdherence(budgetData, categoryMap);
+    const goalProgress = calculateGoalProgress(goalData);
+    const healthScore = Math.round((savingsRate * 0.4) + (budgetAdherence * 0.35) + (goalProgress * 0.25));
 
-    // Calculate month-over-month change
-    const momData = sortedMonthly.map((item, index) => {
-      const prevMonth = sortedMonthly[index - 1];
-      const expenseChange = prevMonth ? ((item.expenses - prevMonth.expenses) / prevMonth.expenses * 100).toFixed(1) : 0;
-      const incomeChange = prevMonth ? ((item.income - prevMonth.income) / prevMonth.income * 100).toFixed(1) : 0;
-      return {
-        ...item,
-        expenseChange: parseFloat(expenseChange),
-        incomeChange: parseFloat(incomeChange),
-      };
-    });
+    // Generate AI insights
+    const generatedInsights = generateInsights(
+      thisMonthIncome, thisMonthExpenses, 
+      lastMonthIncome, lastMonthExpenses,
+      categoryMap, budgetData, goalData, savingsRate
+    );
 
-    // Calculate yearly data
-    const yearlyMap = {};
-    sortedMonthly.forEach(m => {
-      const year = m.fullMonth.substring(0, 4);
-      if (!yearlyMap[year]) {
-        yearlyMap[year] = { year, income: 0, expenses: 0, months: 0 };
-      }
-      yearlyMap[year].income += m.income;
-      yearlyMap[year].expenses += m.expenses;
-      yearlyMap[year].months += 1;
-    });
-    const sortedYearly = Object.values(yearlyMap)
-      .sort((a, b) => a.year.localeCompare(b.year))
-      .map(item => ({
-        ...item,
-        name: item.year,
-        savings: item.income - item.expenses,
-        avgMonthlyExpense: item.expenses / item.months,
-        avgMonthlyIncome: item.income / item.months,
-      }));
-
-    // Convert category maps to arrays for pie charts
-    const expenseArray = Object.entries(categoryExpenseMap)
-      .map(([name, value]) => ({ name: formatCategoryName(name), value, originalName: name }))
-      .sort((a, b) => b.value - a.value);
-
-    const incomeArray = Object.entries(categoryIncomeMap)
-      .map(([name, value]) => ({ name: formatCategoryName(name), value }))
-      .sort((a, b) => b.value - a.value);
-
-    // Weekday spending (average per transaction)
-    const weekdayData = weekdays.map(day => ({
-      name: day,
-      total: weekdayMap[day],
-      average: weekdayCount[day] > 0 ? Math.round(weekdayMap[day] / weekdayCount[day]) : 0,
-      count: weekdayCount[day],
-    }));
-
-    // Top merchants by spending
-    const merchantArray = Object.entries(merchantMap)
-      .map(([name, value]) => ({ name: name.substring(0, 25), value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 10);
-
-    const monthCount = Object.keys(monthlyMap).length || 1;
-
-    setMonthlyData(sortedMonthly);
-    setYearlyData(sortedYearly);
-    setCategoryExpenses(expenseArray);
-    setCategoryIncome(incomeArray);
-    setWeekdaySpending(weekdayData);
-    setTopMerchants(merchantArray);
-    setMonthOverMonth(momData);
     setSummary({
-      income: totalIncome,
-      expenses: totalExpenses,
-      savings: totalIncome - totalExpenses,
-      avgMonthlyExpense: totalExpenses / monthCount,
-      avgMonthlyIncome: totalIncome / monthCount,
+      thisMonthIncome,
+      thisMonthExpenses,
+      lastMonthIncome,
+      lastMonthExpenses,
+      totalSavings: totalIncome - totalExpenses,
+      healthScore: Math.max(0, Math.min(100, healthScore)),
     });
+    setInsights(generatedInsights);
   };
 
-  const formatMonthLabel = (monthKey) => {
-    const [year, month] = monthKey.split('-');
-    const date = new Date(year, parseInt(month) - 1);
-    return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  const calculateBudgetAdherence = (budgetData, categoryMap) => {
+    if (!budgetData || budgetData.length === 0) return 50;
+    let totalScore = 0;
+    let count = 0;
+    
+    budgetData.forEach(b => {
+      const spent = categoryMap[b.category] || 0;
+      const ratio = spent / b.amount;
+      if (ratio <= 1) {
+        totalScore += 100;
+      } else if (ratio <= 1.2) {
+        totalScore += 70;
+      } else {
+        totalScore += 30;
+      }
+      count++;
+    });
+    
+    return count > 0 ? totalScore / count : 50;
   };
 
-  // Get unique years from transactions
-  const years = [...new Set(transactions.map(t => 
-    new Date(t.transaction_date).getFullYear()
-  ))].sort();
+  const calculateGoalProgress = (goalData) => {
+    if (!goalData || goalData.length === 0) return 50;
+    const avgProgress = goalData.reduce((sum, g) => sum + (g.current_amount / g.target_amount) * 100, 0) / goalData.length;
+    return Math.min(100, avgProgress);
+  };
+
+  const generateInsights = (thisIncome, thisExpenses, lastIncome, lastExpenses, categoryMap, budgetData, goalData, savingsRate) => {
+    const insights = [];
+    
+    // Savings insight
+    if (savingsRate >= 20) {
+      insights.push({
+        type: 'success',
+        icon: <CheckCircleIcon />,
+        text: `Excellent! You're saving ${savingsRate.toFixed(1)}% of your income this month. Keep it up!`,
+      });
+    } else if (savingsRate >= 10) {
+      insights.push({
+        type: 'info',
+        icon: <LightbulbIcon />,
+        text: `You're saving ${savingsRate.toFixed(1)}% this month. Try to reach 20% for better financial health.`,
+      });
+    } else if (savingsRate > 0) {
+      insights.push({
+        type: 'warning',
+        icon: <WarningIcon />,
+        text: `Your savings rate is only ${savingsRate.toFixed(1)}%. Consider cutting back on non-essential expenses.`,
+      });
+    } else {
+      insights.push({
+        type: 'error',
+        icon: <WarningIcon />,
+        text: `You're spending more than you earn! Review your expenses immediately.`,
+      });
+    }
+
+    // Expense trend insight
+    if (lastExpenses > 0) {
+      const expenseChange = ((thisExpenses - lastExpenses) / lastExpenses) * 100;
+      if (expenseChange > 20) {
+        insights.push({
+          type: 'warning',
+          icon: <TrendingUpIcon />,
+          text: `Spending increased ${expenseChange.toFixed(0)}% vs last month. Check where extra money went.`,
+        });
+      } else if (expenseChange < -10) {
+        insights.push({
+          type: 'success',
+          icon: <TrendingDownIcon />,
+          text: `Great job! You reduced spending by ${Math.abs(expenseChange).toFixed(0)}% from last month.`,
+        });
+      }
+    }
+
+    // Top spending category insight
+    const topCategory = Object.entries(categoryMap).sort((a, b) => b[1] - a[1])[0];
+    if (topCategory && thisExpenses > 0) {
+      const percentage = (topCategory[1] / thisExpenses) * 100;
+      if (percentage > 40) {
+        insights.push({
+          type: 'info',
+          icon: <LightbulbIcon />,
+          text: `${formatCategoryName(topCategory[0])} is ${percentage.toFixed(0)}% of your spending. Consider if this is necessary.`,
+        });
+      }
+    }
+
+    // Budget warning
+    const overBudget = budgetData?.filter(b => {
+      const spent = categoryMap[b.category] || 0;
+      return spent > b.amount;
+    });
+    if (overBudget && overBudget.length > 0) {
+      insights.push({
+        type: 'warning',
+        icon: <WarningIcon />,
+        text: `You've exceeded ${overBudget.length} budget${overBudget.length > 1 ? 's' : ''}: ${overBudget.map(b => formatCategoryName(b.category)).join(', ')}`,
+      });
+    }
+
+    // Goal progress
+    const nearGoals = goalData?.filter(g => (g.current_amount / g.target_amount) >= 0.8 && (g.current_amount / g.target_amount) < 1);
+    if (nearGoals && nearGoals.length > 0) {
+      insights.push({
+        type: 'success',
+        icon: <FlagIcon />,
+        text: `Almost there! "${nearGoals[0].name}" is ${((nearGoals[0].current_amount / nearGoals[0].target_amount) * 100).toFixed(0)}% complete!`,
+      });
+    }
+
+    return insights.slice(0, 5); // Max 5 insights
+  };
+
+  // Filter transactions
+  const filteredTransactions = transactions
+    .filter(tx => {
+      if (typeFilter !== 'all' && tx.transaction_type !== typeFilter) return false;
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        return (
+          tx.description?.toLowerCase().includes(query) ||
+          tx.category?.toLowerCase().includes(query) ||
+          tx.amount?.toString().includes(query)
+        );
+      }
+      return true;
+    })
+    .sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date));
+
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
 
   if (loading) {
     return (
@@ -274,334 +389,207 @@ export function Reports() {
     );
   }
 
-  if (transactions.length === 0) {
-    return (
-      <Box>
-        <Typography variant="h4" gutterBottom>Financial Reports</Typography>
-        <Alert severity="info" sx={{ mt: 2 }}>
-          No transaction data available. Upload your transactions to see detailed financial reports and insights.
-        </Alert>
-      </Box>
-    );
-  }
-
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-        <Box>
-          <Typography variant="h4" gutterBottom>
-            Financial Reports
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            {transactions.length.toLocaleString()} transactions analyzed • {years.length > 0 ? `${Math.min(...years)} - ${Math.max(...years)}` : 'No data'}
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>Year</InputLabel>
-            <Select
-              value={selectedYear}
-              label="Year"
-              onChange={(e) => setSelectedYear(e.target.value)}
-            >
-              <MenuItem value="all">All Years</MenuItem>
-              {years.map(year => (
-                <MenuItem key={year} value={year.toString()}>{year}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Box>
-      </Box>
+      <Typography variant="h4" gutterBottom>
+        Reports & Insights
+      </Typography>
+      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+        Your financial health overview and complete transaction history
+      </Typography>
 
-      {/* Summary Cards */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ py: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <TrendingUpIcon sx={{ color: 'success.main', mr: 1, fontSize: 20 }} />
-                <Typography variant="body2" color="text.secondary">Total Income</Typography>
-              </Box>
-              <Typography variant="h5" color="success.main" fontWeight="bold">
-                {formatCurrency(summary.income)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Avg: {formatCurrency(summary.avgMonthlyIncome)}/mo
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ py: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <TrendingDownIcon sx={{ color: 'error.main', mr: 1, fontSize: 20 }} />
-                <Typography variant="body2" color="text.secondary">Total Expenses</Typography>
-              </Box>
-              <Typography variant="h5" color="error.main" fontWeight="bold">
-                {formatCurrency(summary.expenses)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Avg: {formatCurrency(summary.avgMonthlyExpense)}/mo
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ py: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <SavingsIcon sx={{ color: summary.savings >= 0 ? 'primary.main' : 'warning.main', mr: 1, fontSize: 20 }} />
-                <Typography variant="body2" color="text.secondary">Net Savings</Typography>
-              </Box>
-              <Typography variant="h5" color={summary.savings >= 0 ? 'primary.main' : 'warning.main'} fontWeight="bold">
-                {summary.savings >= 0 ? '' : '-'}{formatCurrency(summary.savings)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {summary.income > 0 ? `${((summary.savings / summary.income) * 100).toFixed(1)}% saved` : '0% saved'}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ py: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <CompareArrowsIcon sx={{ color: 'info.main', mr: 1, fontSize: 20 }} />
-                <Typography variant="body2" color="text.secondary">Expense Ratio</Typography>
-              </Box>
-              <Typography variant="h5" color="info.main" fontWeight="bold">
-                {summary.income > 0 ? ((summary.expenses / summary.income) * 100).toFixed(0) : 0}%
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                of income spent
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* Main Charts Row */}
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        {/* Income vs Expenses Over Time */}
-        <Grid size={{ xs: 12, lg: 8 }}>
-          <Card sx={{ height: 400 }}>
-            <CardContent sx={{ height: '100%' }}>
+      <Grid container spacing={3}>
+        {/* Financial Health Score */}
+        <Grid size={{ xs: 12, md: 4 }}>
+          <Card sx={{ height: 380 }}>
+            <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               <Typography variant="h6" gutterBottom>
-                💰 Income vs Expenses Over Time
+                💪 Financial Health Score
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Track how your income and spending change each year
-              </Typography>
-              <ResponsiveContainer width="100%" height="80%">
-                <ComposedChart data={yearlyData}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend />
-                  <Bar dataKey="income" name="Income" fill="#2e7d32" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="expenses" name="Expenses" fill="#d32f2f" radius={[4, 4, 0, 0]} />
-                  <Line type="monotone" dataKey="savings" name="Net Savings" stroke="#1976d2" strokeWidth={3} dot={{ fill: '#1976d2', r: 4 }} />
-                </ComposedChart>
-              </ResponsiveContainer>
+              <HealthScore 
+                score={summary.healthScore} 
+                label={summary.healthScore >= 70 ? 'Healthy' : summary.healthScore >= 40 ? 'Fair' : 'Needs Work'} 
+              />
+              <Box sx={{ mt: 3, width: '100%' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Savings Rate</Typography>
+                  <Typography variant="body2" fontWeight="medium">
+                    {summary.thisMonthIncome > 0 ? ((summary.thisMonthIncome - summary.thisMonthExpenses) / summary.thisMonthIncome * 100).toFixed(1) : 0}%
+                  </Typography>
+                </Box>
+                <LinearProgress 
+                  variant="determinate" 
+                  value={Math.min(100, summary.thisMonthIncome > 0 ? ((summary.thisMonthIncome - summary.thisMonthExpenses) / summary.thisMonthIncome * 100) : 0)}
+                  sx={{ height: 8, borderRadius: 4, mb: 2 }}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center' }}>
+                  Based on savings rate, budget adherence & goal progress
+                </Typography>
+              </Box>
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Expense Breakdown Pie */}
-        <Grid size={{ xs: 12, lg: 4 }}>
-          <Card sx={{ height: 400 }}>
+        {/* AI Insights */}
+        <Grid size={{ xs: 12, md: 8 }}>
+          <Card sx={{ height: 380, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
             <CardContent sx={{ height: '100%' }}>
-              <Typography variant="h6" gutterBottom>
-                📊 Where Your Money Goes
+              <Typography variant="h6" sx={{ color: 'white', mb: 2 }}>
+                🤖 AI Financial Insights
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Top spending categories
-              </Typography>
-              {categoryExpenses.length > 0 ? (
-                <ResponsiveContainer width="100%" height="80%">
-                  <PieChart>
-                    <Pie
-                      data={categoryExpenses.slice(0, 8)}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={90}
-                      paddingAngle={2}
-                      dataKey="value"
-                    >
-                      {categoryExpenses.slice(0, 8).map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => formatCurrency(value)} />
-                    <Legend 
-                      layout="vertical" 
-                      align="right" 
-                      verticalAlign="middle"
-                      formatter={(value, entry) => (
-                        <span style={{ fontSize: 11 }}>
-                          {value} ({((entry.payload.value / summary.expenses) * 100).toFixed(0)}%)
-                        </span>
-                      )}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <Typography color="text.secondary">No expense data</Typography>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* Savings Trend & Spending Patterns */}
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        {/* Savings Rate Trend */}
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Card sx={{ height: 350 }}>
-            <CardContent sx={{ height: '100%' }}>
-              <Typography variant="h6" gutterBottom>
-                📈 Savings Trend
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Your net savings each year — green is good!
-              </Typography>
-              <ResponsiveContainer width="100%" height="75%">
-                <AreaChart data={yearlyData}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <defs>
-                    <linearGradient id="savingsGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#2e7d32" stopOpacity={0.8}/>
-                      <stop offset="95%" stopColor="#2e7d32" stopOpacity={0.1}/>
-                    </linearGradient>
-                  </defs>
-                  <Area 
-                    type="monotone" 
-                    dataKey="savings" 
-                    name="Savings"
-                    stroke="#2e7d32" 
-                    fill="url(#savingsGradient)"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, maxHeight: 300, overflow: 'auto' }}>
+                {insights.length > 0 ? insights.map((insight, index) => (
+                  <Box 
+                    key={index} 
+                    sx={{ 
+                      display: 'flex', 
+                      alignItems: 'flex-start', 
+                      gap: 1.5,
+                      bgcolor: 'rgba(255,255,255,0.15)',
+                      borderRadius: 2,
+                      p: 1.5,
+                    }}
+                  >
+                    <Box sx={{ color: insight.type === 'success' ? '#4caf50' : insight.type === 'warning' ? '#ff9800' : insight.type === 'error' ? '#f44336' : '#90caf9' }}>
+                      {insight.icon}
+                    </Box>
+                    <Typography variant="body2" sx={{ color: 'white' }}>
+                      {insight.text}
+                    </Typography>
+                  </Box>
+                )) : (
+                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                    Add more transactions to get personalized insights!
+                  </Typography>
+                )}
+              </Box>
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Spending by Day of Week */}
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Card sx={{ height: 350 }}>
-            <CardContent sx={{ height: '100%' }}>
-              <Typography variant="h6" gutterBottom>
-                📅 When Do You Spend Most?
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Total spending by day of week
-              </Typography>
-              <ResponsiveContainer width="100%" height="75%">
-                <BarChart data={weekdaySpending}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-                  <Tooltip 
-                    formatter={(value, name) => [formatCurrency(value), name === 'total' ? 'Total Spent' : 'Avg per Transaction']}
-                    labelFormatter={(label) => `${label}`}
-                  />
-                  <Bar dataKey="total" name="Total Spent" fill="#ed6c02" radius={[4, 4, 0, 0]}>
-                    {weekdaySpending.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={entry.total === Math.max(...weekdaySpending.map(d => d.total)) ? '#d32f2f' : '#ed6c02'} 
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-
-      {/* Monthly Expense Trend Line */}
-      <Grid container spacing={3} sx={{ mb: 3 }}>
+        {/* All Transactions Table */}
         <Grid size={12}>
-          <Card sx={{ height: 350 }}>
-            <CardContent sx={{ height: '100%' }}>
-              <Typography variant="h6" gutterBottom>
-                📉 Expense Trend Analysis
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Track your spending patterns over time — aim for the line to go down!
-              </Typography>
-              <ResponsiveContainer width="100%" height="75%">
-                <LineChart data={monthlyData}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="expenses" 
-                    name="Monthly Expenses"
-                    stroke="#d32f2f" 
-                    strokeWidth={3}
-                    dot={{ fill: '#d32f2f', r: 4 }}
-                    activeDot={{ r: 6 }}
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
+                <Typography variant="h6">
+                  📝 All Transactions ({filteredTransactions.length.toLocaleString()})
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                  <TextField
+                    size="small"
+                    placeholder="Search..."
+                    value={searchQuery}
+                    onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon fontSize="small" />
+                        </InputAdornment>
+                      ),
+                    }}
+                    sx={{ minWidth: 200 }}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="income" 
-                    name="Monthly Income"
-                    stroke="#2e7d32" 
-                    strokeWidth={2}
-                    strokeDasharray="5 5"
-                    dot={{ fill: '#2e7d32', r: 3 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+                  <FormControl size="small" sx={{ minWidth: 120 }}>
+                    <InputLabel>Type</InputLabel>
+                    <Select
+                      value={typeFilter}
+                      label="Type"
+                      onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}
+                    >
+                      <MenuItem value="all">All</MenuItem>
+                      <MenuItem value="income">Income</MenuItem>
+                      <MenuItem value="expense">Expense</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Box>
+              </Box>
+
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Date</TableCell>
+                      <TableCell>Description</TableCell>
+                      <TableCell>Category</TableCell>
+                      <TableCell>Type</TableCell>
+                      <TableCell align="right">Amount</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {filteredTransactions
+                      .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                      .map((tx, index) => (
+                        <TableRow key={tx.id || index} hover>
+                          <TableCell>
+                            {new Date(tx.transaction_date).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Avatar sx={{ 
+                                width: 28, 
+                                height: 28, 
+                                bgcolor: tx.transaction_type === 'income' ? 'success.light' : 'error.light',
+                                '& .MuiSvgIcon-root': { fontSize: 16 }
+                              }}>
+                                {getCategoryIcon(tx.category)}
+                              </Avatar>
+                              <Typography variant="body2" noWrap sx={{ maxWidth: 300 }}>
+                                {tx.description || formatCategoryName(tx.category)}
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Chip 
+                              label={formatCategoryName(tx.category)} 
+                              size="small" 
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Chip 
+                              label={tx.transaction_type === 'income' ? 'Income' : 'Expense'}
+                              size="small"
+                              color={tx.transaction_type === 'income' ? 'success' : 'error'}
+                            />
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography 
+                              variant="body2" 
+                              fontWeight="medium"
+                              color={tx.transaction_type === 'income' ? 'success.main' : 'error.main'}
+                            >
+                              {tx.transaction_type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    {filteredTransactions.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
+                          <Typography color="text.secondary">
+                            No transactions found
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              
+              <TablePagination
+                rowsPerPageOptions={[10, 25, 50, 100]}
+                component="div"
+                count={filteredTransactions.length}
+                rowsPerPage={rowsPerPage}
+                page={page}
+                onPageChange={handleChangePage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+              />
             </CardContent>
           </Card>
         </Grid>
       </Grid>
-
-      {/* Year over Year Comparison (if multiple years) */}
-      {yearlyData.length > 1 && (
-        <Grid container spacing={3}>
-          <Grid size={12}>
-            <Card sx={{ height: 350 }}>
-              <CardContent sx={{ height: '100%' }}>
-                <Typography variant="h6" gutterBottom>
-                  📆 Year-over-Year Comparison
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  How has your financial health changed year by year?
-                </Typography>
-                <ResponsiveContainer width="100%" height="75%">
-                  <BarChart data={yearlyData}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                    <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend />
-                    <Bar dataKey="income" name="Total Income" fill="#2e7d32" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="expenses" name="Total Expenses" fill="#d32f2f" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="savings" name="Net Savings" fill="#1976d2" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      )}
     </Box>
   );
 }

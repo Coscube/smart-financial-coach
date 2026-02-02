@@ -28,6 +28,8 @@ export function Layout() {
           p: 3,
           width: { sm: `calc(100% - ${DRAWER_WIDTH}px)` },
           backgroundColor: 'background.default',
+          overflow: 'auto',
+          height: '100vh',
         }}
       >
         <Toolbar />

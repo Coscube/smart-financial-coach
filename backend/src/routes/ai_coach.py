@@ -1,16 +1,7 @@
 """
-AI Coach routes for providing financial advice based on user transactions.
-Comprehensive chatbot with intent detection, privacy-first design, and
-engaging personality. Falls back to AI API for complex questions.
-
-Security Features:
-- No PII (names, emails) sent to AI models
-- Input sanitization and validation
-- Rate limiting ready (via middleware)
-- Blocked topics detection
+AI Coach routes - LLM-only financial chatbot with PII protection.
 """
 
-import random
 import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -31,8 +22,9 @@ from src.routes.deps import CurrentUser
 
 router = APIRouter()
 
+
 # ============================================
-# SECURITY: Blocked patterns and PII detection
+# SECURITY: Blocked patterns
 # ============================================
 BLOCKED_PATTERNS = [
     r"\b(password|pwd|secret|api.?key|token)\b",
@@ -42,150 +34,55 @@ BLOCKED_PATTERNS = [
     r"\b(hack|exploit|inject|sql.?inject)\b",
 ]
 
-PII_PATTERNS = [
-    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",  # Email
-    r"\b\d{3}[-.]?\d{2}[-.]?\d{4}\b",  # SSN
-    r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b",  # Credit card
-]
 
 # ============================================
-# INTENT DETECTION: Categorize user questions
+# INTENT DETECTION (for follow-up suggestions only)
 # ============================================
-
-
 class Intent(str, Enum):
-    """User intent categories for smarter routing."""
-
     GREETING = "greeting"
-    SUMMARY = "summary"
     SPENDING = "spending"
     INCOME = "income"
     SAVINGS = "savings"
-    COMPARISON = "comparison"
-    CATEGORY = "category"
-    ADVICE = "advice"
     GOALS = "goals"
     FORECAST = "forecast"
-    ANOMALY = "anomaly"
-    HELP = "help"
-    THANKS = "thanks"
     UNKNOWN = "unknown"
 
 
 INTENT_PATTERNS = {
-    Intent.GREETING: [
-        r"^(hi|hello|hey|good\s*(morning|afternoon|evening)|howdy)",
-        r"^(what'?s up|sup|yo)\b",
-    ],
-    Intent.SUMMARY: [
-        r"(summary|overview|how.?am.?i.?doing|financial.?health)",
-        r"(quick.?look|snapshot|status|report)",
-    ],
-    Intent.SPENDING: [
-        r"(spend|spent|expense|pay|paid|cost|purchase|buy|bought)",
-        r"(where.?did.?my.?money|money.?go)",
-    ],
-    Intent.INCOME: [
-        r"(income|earn|salary|revenue|money.?in|deposit)",
-        r"(how.?much.?made|money.?coming)",
-    ],
-    Intent.SAVINGS: [
-        r"(save|saving|savings|leftover|remaining|surplus)",
-        r"(how.?can.?i.?save|cut.?back|reduce)",
-    ],
-    Intent.COMPARISON: [
-        r"(compar|vs|versus|last.?month|previous|change)",
-        r"(better|worse|up|down|increase|decrease)",
-    ],
-    Intent.CATEGORY: [
-        r"(category|categories|breakdown|food|grocery|entertainment)",
-        r"(transport|shopping|utilities|bills|rent)",
-    ],
-    Intent.ADVICE: [
-        r"(advice|suggest|recommend|tip|help.?me|should.?i)",
-        r"(how.?to|what.?can|best.?way|improve)",
-    ],
-    Intent.GOALS: [
-        r"(goal|target|objective|aim|plan|milestone)",
-        r"(emergency.?fund|vacation|retire|debt)",
-    ],
-    Intent.FORECAST: [
-        r"(predict|forecast|project|estimate|will.?i|future)",
-        r"(end.?of.?month|next.?month|year.?end)",
-    ],
-    Intent.ANOMALY: [
-        r"(anomal|unusual|weird|strange|odd|suspicious)",
-        r"(spike|jump|surge|unexpected|surprise)",
-        r"(out.?of.?ordinary|different|abnormal)",
-    ],
-    Intent.HELP: [
-        r"^help$|what.?can.?you|what.?do.?you|commands|options",
-        r"how.?does.?this|explain|tutorial",
-    ],
-    Intent.THANKS: [
-        r"(thanks?|thank.?you|thx|appreciate|great|awesome|perfect)",
-    ],
+    Intent.GREETING: [r"^(hi|hello|hey)"],
+    Intent.SPENDING: [r"(spend|spent|expense|cost|purchase)"],
+    Intent.INCOME: [r"(income|earn|salary|revenue)"],
+    Intent.SAVINGS: [r"(save|saving|savings)"],
+    Intent.GOALS: [r"(goal|target|objective)"],
+    Intent.FORECAST: [r"(predict|forecast|future|will.?i)"],
 }
 
+
 # ============================================
-# ENGAGING RESPONSES: Personality & variety
+# REQUEST/RESPONSE MODELS
 # ============================================
-GREETINGS = [
-    "Hey there! 👋 Ready to dive into your finances?",
-    "Hello! 💰 Let's see how your money is doing today!",
-    "Hi! 🌟 I'm your financial coach. What would you like to know?",
-    "Welcome back! 📊 How can I help with your finances today?",
-]
-
-THANKS_RESPONSES = [
-    "You're welcome! 😊 Let me know if you need anything else!",
-    "Glad I could help! 💪 Keep up the great financial habits!",
-    "Anytime! 🌟 Feel free to ask more questions!",
-    "Happy to help! 📈 You're doing great staying on top of your finances!",
-]
-
-ENCOURAGEMENTS = [
-    "💪 Keep it up!",
-    "🌟 You're on the right track!",
-    "📈 Great progress!",
-    "👏 Nice work!",
-    "🎯 You've got this!",
-]
-
-
 class ChatRequest(BaseModel):
-    """Request model for AI coach chat."""
-
     message: str
 
     @field_validator("message")
     @classmethod
     def validate_message(cls, v: str) -> str:
-        """Validate and sanitize the message."""
-        # Strip whitespace
         v = v.strip()
-
-        # Check length
         if len(v) < 1:
             raise ValueError("Message cannot be empty")
         if len(v) > 1000:
             raise ValueError("Message too long (max 1000 characters)")
 
-        # Check for blocked patterns
-        lower_msg = v.lower()
         for pattern in BLOCKED_PATTERNS:
-            if re.search(pattern, lower_msg, re.IGNORECASE):
+            if re.search(pattern, v.lower(), re.IGNORECASE):
                 raise ValueError(
                     "For security, I can't help with sensitive information. "
                     "Please ask about your spending, income, or savings instead!"
                 )
-
         return v
 
 
 class ChatResponse(BaseModel):
-    """Response model for AI coach chat."""
-
     response: str
     intent: Optional[str] = None
     suggestions: Optional[list[str]] = None
@@ -194,103 +91,30 @@ class ChatResponse(BaseModel):
 # ============================================
 # HELPER FUNCTIONS
 # ============================================
-
-
 def detect_intent(message: str) -> Intent:
-    """Detect user intent from message using pattern matching."""
-    lower_msg = message.lower().strip()
-
+    """Detect intent for follow-up suggestions."""
+    lower_msg = message.lower()
     for intent, patterns in INTENT_PATTERNS.items():
         for pattern in patterns:
             if re.search(pattern, lower_msg, re.IGNORECASE):
                 return intent
-
     return Intent.UNKNOWN
 
 
-def sanitize_for_ai(text: str) -> str:
-    """Remove PII before sending to external AI."""
-    result = text
-    for pattern in PII_PATTERNS:
-        result = re.sub(pattern, "[REDACTED]", result)
-    return result
-
-
-def get_follow_up_suggestions(intent: Intent, context: dict) -> list[str]:
-    """Get contextual follow-up suggestions based on intent."""
+def get_suggestions(intent: Intent) -> list[str]:
+    """Get follow-up suggestions based on intent."""
     suggestions = {
-        Intent.GREETING: [
-            "How much did I spend this month?",
-            "Show me my financial summary",
-            "What are my top expenses?",
-        ],
-        Intent.SUMMARY: [
-            "Compare to last month",
-            "How can I save more?",
-            "What's my biggest expense?",
-        ],
-        Intent.SPENDING: [
-            "Break down by category",
-            "What's my daily average?",
-            "Compare to last month",
-        ],
-        Intent.INCOME: [
-            "What's my net savings?",
-            "Am I saving enough?",
-            "Show expense breakdown",
-        ],
-        Intent.SAVINGS: [
-            "Give me saving tips",
-            "What's my savings rate?",
-            "Set a savings goal",
-        ],
-        Intent.COMPARISON: [
-            "Why did spending change?",
-            "Show category breakdown",
-            "Give me advice",
-        ],
-        Intent.CATEGORY: [
-            "How can I reduce this?",
-            "Compare to average",
-            "Set a budget limit",
-        ],
-        Intent.ADVICE: [
-            "Show my spending",
-            "What are my goals?",
-            "Create a budget",
-        ],
-        Intent.GOALS: [
-            "How much should I save?",
-            "Track my progress",
-            "Adjust my timeline",
-        ],
-        Intent.FORECAST: [
-            "How to improve forecast?",
-            "Set a savings target",
-            "Review my spending",
-        ],
-        Intent.ANOMALY: [
-            "Show my top expenses",
-            "Compare to last month",
-            "What caused the spike?",
-        ],
+        Intent.GREETING: ["How much did I spend this month?", "Show my summary", "What are my top expenses?"],
+        Intent.SPENDING: ["Break down by category", "Compare to last month", "How can I save more?"],
+        Intent.INCOME: ["What's my net savings?", "Show expense breakdown", "Am I saving enough?"],
+        Intent.SAVINGS: ["Give me saving tips", "What's my savings rate?", "Show my goals"],
+        Intent.GOALS: ["How much should I save?", "Track my progress", "Show my spending"],
+        Intent.FORECAST: ["Review my spending", "Set a savings target", "Show trends"],
     }
-
-    base_suggestions = suggestions.get(
-        intent,
-        ["Show summary", "Give me advice", "What are my top expenses?"],
-    )
-
-    # Add context-aware suggestions
-    month = context.get("month", {})
-    if month.get("net", 0) < 0:
-        base_suggestions.insert(0, "How can I fix my budget?")
-
-    return base_suggestions[:3]
+    return suggestions.get(intent, ["Show summary", "Give me advice", "What are my top expenses?"])[:3]
 
 
 def format_currency(amount) -> str:
-    """Format decimal/int/float as currency string."""
     try:
         return f"${float(amount):,.2f}"
     except (TypeError, ValueError):
@@ -298,1377 +122,671 @@ def format_currency(amount) -> str:
 
 
 def get_date_ranges() -> dict:
-    """Get commonly used date ranges for queries."""
     now = datetime.now(timezone.utc)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    # This month
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-    # Last month
     last_month_end = month_start - timedelta(days=1)
     last_month_start = last_month_end.replace(day=1)
-
-    # This week (Monday start)
-    days_since_monday = today.weekday()
-    week_start = today - timedelta(days=days_since_monday)
-
-    # Last week
-    last_week_end = week_start - timedelta(days=1)
-    last_week_start = last_week_end - timedelta(days=6)
-
-    # This year
+    week_start = now - timedelta(days=now.weekday())
     year_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    # Last year
-    last_year_start = year_start.replace(year=year_start.year - 1)
-    last_year_end = year_start - timedelta(days=1)
-
     return {
-        "today": today,
         "now": now,
         "month_start": month_start,
         "last_month_start": last_month_start,
         "last_month_end": last_month_end,
         "week_start": week_start,
-        "last_week_start": last_week_start,
-        "last_week_end": last_week_end,
         "year_start": year_start,
-        "last_year_start": last_year_start,
-        "last_year_end": last_year_end,
     }
 
 
 # ============================================
-# ANOMALY DETECTION
+# PII OBFUSCATION
 # ============================================
-
-
-def detect_anomalies(context: dict) -> dict:
-    """
-    Detect unusual spending patterns and anomalies.
-
-    Returns dict with:
-    - large_transactions: Transactions significantly above average
-    - category_spikes: Categories with unusual increases
-    - frequency_anomalies: Unusual transaction frequency
-    - new_categories: Categories that appeared recently
-    """
-    anomalies = {
-        "large_transactions": [],
-        "category_spikes": [],
-        "frequency_anomalies": [],
-        "new_categories": [],
-        "has_anomalies": False,
-    }
-
-    # Get data from context
-    daily_avg = float(context.get("daily_expense_avg", 0))
-    month_categories = dict(context.get("month_categories_expense", []))
-    last_month_categories = dict(context.get("last_month_categories", []))
-    top_expenses = context.get("top_expenses", [])
-    monthly_data = context.get("monthly_data", {})
-
-    # 1. Large Transaction Detection (>3x daily average)
-    threshold = daily_avg * 3 if daily_avg > 0 else 100
-    for t in top_expenses[:10]:
-        if float(t["amount"]) > threshold:
-            anomalies["large_transactions"].append(
-                {
-                    "amount": float(t["amount"]),
-                    "category": t["category"],
-                    "description": t["description"],
-                    "date": t["date"],
-                    "multiple": round(float(t["amount"]) / daily_avg, 1) if daily_avg > 0 else 0,
-                }
-            )
-
-    # 2. Category Spike Detection (>50% increase from last month)
-    for cat, amount in month_categories.items():
-        last_amount = float(last_month_categories.get(cat, 0))
-        current = float(amount)
-        if last_amount > 0:
-            change_pct = ((current - last_amount) / last_amount) * 100
-            if change_pct > 50:  # 50% increase threshold
-                anomalies["category_spikes"].append(
-                    {
-                        "category": cat,
-                        "current": current,
-                        "previous": last_amount,
-                        "change_pct": round(change_pct, 1),
-                    }
-                )
-
-    # 3. New Categories (appeared this month, not last)
-    for cat in month_categories:
-        if cat not in last_month_categories:
-            anomalies["new_categories"].append(
-                {
-                    "category": cat,
-                    "amount": float(month_categories[cat]),
-                }
-            )
-
-    # 4. Monthly Spending Spike
-    if len(monthly_data) >= 2:
-        sorted_months = sorted(monthly_data.items(), reverse=True)
-        if len(sorted_months) >= 2:
-            current_expenses = float(sorted_months[0][1].get("expenses", 0))
-            prev_expenses = float(sorted_months[1][1].get("expenses", 0))
-            if prev_expenses > 0:
-                monthly_change = ((current_expenses - prev_expenses) / prev_expenses) * 100
-                if monthly_change > 30:  # 30% month-over-month spike
-                    anomalies["frequency_anomalies"].append(
-                        {
-                            "type": "monthly_spike",
-                            "current": current_expenses,
-                            "previous": prev_expenses,
-                            "change_pct": round(monthly_change, 1),
-                        }
-                    )
-
-    # Check if any anomalies were found
-    anomalies["has_anomalies"] = (
-        len(anomalies["large_transactions"]) > 0
-        or len(anomalies["category_spikes"]) > 0
-        or len(anomalies["new_categories"]) > 0
-        or len(anomalies["frequency_anomalies"]) > 0
-    )
-
-    return anomalies
+def obfuscate_pii(text: str) -> str:
+    """Remove PII from text before sending to AI."""
+    if not text:
+        return text
+    
+    result = text
+    # Email
+    result = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[EMAIL]', result)
+    # Phone
+    result = re.sub(r'\b(\+?1?[-.]?)?\(?\d{3}\)?[-.]?\d{3}[-.]?\d{4}\b', '[PHONE]', result)
+    # SSN
+    result = re.sub(r'\b\d{3}[-.]?\d{2}[-.]?\d{4}\b', '[SSN]', result)
+    # Credit card
+    result = re.sub(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b', '[CARD]', result)
+    # Bank account (8-17 digits)
+    result = re.sub(r'\b\d{8,17}\b', '[ACCOUNT]', result)
+    
+    return result
 
 
 # ============================================
-# FORECASTING & FUTURE INSIGHTS
+# FINANCIAL CONTEXT GATHERING - OPTIMIZED FOR LLM
 # ============================================
-
-
-def generate_forecast(context: dict) -> dict:
+async def get_financial_context(user_id: int, db: AsyncSession) -> dict:
     """
-    Generate financial forecasts and future insights.
-
-    Returns dict with:
-    - end_of_month: Projected end of month figures
-    - savings_projection: When savings goals might be reached
-    - spending_trend: Overall trend direction
-    - recommendations: Actionable insights
+    Get comprehensive financial data optimized for LLM analysis.
+    Provides raw data + pre-computed statistics for maximum insight.
     """
-    forecast = {
-        "end_of_month": {},
-        "savings_projection": [],
-        "spending_trend": "stable",
-        "budget_status": "",
-        "recommendations": [],
-    }
-
-    now = context.get("now", datetime.now(timezone.utc))
-    day_of_month = now.day
-    days_in_month = 30  # Approximation
-
-    # Get financial data
-    month = context.get("month", {})
-    daily_exp_avg = float(context.get("daily_expense_avg", 0))
-    daily_inc_avg = float(context.get("daily_income_avg", 0))
-    monthly_data = context.get("monthly_data", {})
-    goals = context.get("goals", [])
-
-    current_expenses = float(month.get("expenses", 0))
-    current_income = float(month.get("income", 0))
-
-    # 1. End of Month Projection
-    days_remaining = max(days_in_month - day_of_month, 0)
-
-    # Project based on current month's daily average
-    if day_of_month > 0:
-        this_month_daily_exp = current_expenses / day_of_month
-        this_month_daily_inc = current_income / day_of_month
-    else:
-        this_month_daily_exp = daily_exp_avg
-        this_month_daily_inc = daily_inc_avg
-
-    projected_expenses = current_expenses + (this_month_daily_exp * days_remaining)
-    projected_income = current_income + (this_month_daily_inc * days_remaining)
-    projected_net = projected_income - projected_expenses
-
-    forecast["end_of_month"] = {
-        "projected_expenses": round(projected_expenses, 2),
-        "projected_income": round(projected_income, 2),
-        "projected_net": round(projected_net, 2),
-        "days_remaining": days_remaining,
-        "current_daily_expense_rate": round(this_month_daily_exp, 2),
-    }
-
-    # 2. Spending Trend Analysis
-    if len(monthly_data) >= 3:
-        sorted_months = sorted(monthly_data.items(), reverse=True)[:3]
-        expenses = [float(m[1].get("expenses", 0)) for m in sorted_months]
-
-        if expenses[0] > expenses[1] > expenses[2]:
-            forecast["spending_trend"] = "increasing"
-        elif expenses[0] < expenses[1] < expenses[2]:
-            forecast["spending_trend"] = "decreasing"
-        elif expenses[0] > expenses[1]:
-            forecast["spending_trend"] = "slightly_increasing"
-        elif expenses[0] < expenses[1]:
-            forecast["spending_trend"] = "slightly_decreasing"
-        else:
-            forecast["spending_trend"] = "stable"
-
-    # 3. Budget Status
-    if projected_net > 0:
-        savings_rate = (projected_net / projected_income * 100) if projected_income > 0 else 0
-        if savings_rate >= 20:
-            forecast["budget_status"] = "excellent"
-        elif savings_rate >= 10:
-            forecast["budget_status"] = "good"
-        else:
-            forecast["budget_status"] = "fair"
-    else:
-        forecast["budget_status"] = "over_budget"
-
-    # 4. Goal Projections
-    monthly_savings = float(month.get("net", 0))
-    for goal in goals:
-        if goal.get("status") in ["not_started", "in_progress"]:
-            target = float(goal.get("target", 0))
-            current = float(goal.get("current", 0))
-            remaining = target - current
-
-            if monthly_savings > 0 and remaining > 0:
-                months_to_goal = remaining / monthly_savings
-                forecast["savings_projection"].append(
-                    {
-                        "goal_name": goal.get("name"),
-                        "remaining": round(remaining, 2),
-                        "months_to_goal": round(months_to_goal, 1),
-                        "on_track": months_to_goal <= 12,
-                    }
-                )
-
-    # 5. Generate Recommendations
-    if forecast["budget_status"] == "over_budget":
-        reduce_by = round(abs(projected_net) / max(days_remaining, 1), 2)
-        forecast["recommendations"].append(
-            "⚠️ You're on track to overspend this month. "
-            f"Consider reducing daily spending by ${reduce_by}"
-        )
-
-    if forecast["spending_trend"] == "increasing":
-        forecast["recommendations"].append(
-            "📈 Your spending has been increasing over the past 3 months. "
-            "Review your recent expenses for areas to cut back."
-        )
-
-    if forecast["budget_status"] in ["excellent", "good"]:
-        forecast["recommendations"].append(
-            f"✅ Great job! You're projected to save ${round(projected_net, 2)} this month."
-        )
-
-    return forecast
-
-
-async def get_comprehensive_financial_context(user_id: int, db: AsyncSession) -> dict:
-    """Get comprehensive user financial context for AI analysis."""
-    dates = get_date_ranges()
-    now = dates["now"]
-
-    # Get ALL transactions
+    from collections import defaultdict
+    import statistics
+    
+    now = datetime.now(timezone.utc)
+    
+    # Get ALL transactions (no limit - LLM needs full picture)
     result = await db.execute(
-        select(Transaction)
-        .where(Transaction.user_id == user_id)
-        .order_by(Transaction.transaction_date.desc())
+        select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.transaction_date.desc())
     )
     all_transactions = result.scalars().all()
 
     if not all_transactions:
-        return {
-            "has_data": False,
-            "message": "No transactions found. Start adding income and expenses!",
-        }
+        return {"has_data": False}
 
-    # Current month transactions
-    month_transactions = [
-        t
-        for t in all_transactions
-        if t.transaction_date and t.transaction_date >= dates["month_start"]
-    ]
-
-    # Last month transactions
-    last_month_transactions = [
-        t
-        for t in all_transactions
-        if t.transaction_date
-        and dates["last_month_start"] <= t.transaction_date <= dates["last_month_end"]
-    ]
-
-    # This week transactions
-    week_transactions = [
-        t
-        for t in all_transactions
-        if t.transaction_date and t.transaction_date >= dates["week_start"]
-    ]
-
-    # Last week transactions
-    last_week_transactions = [
-        t
-        for t in all_transactions
-        if t.transaction_date
-        and dates["last_week_start"] <= t.transaction_date <= dates["last_week_end"]
-    ]
-
-    # This year transactions
-    year_transactions = [
-        t
-        for t in all_transactions
-        if t.transaction_date and t.transaction_date >= dates["year_start"]
-    ]
-
-    # Calculate various metrics
-    def calc_totals(trans_list):
-        income = sum(
-            (t.amount for t in trans_list if t.transaction_type == TransactionType.INCOME),
-            Decimal(0),
-        )
-        expenses = sum(
-            (t.amount for t in trans_list if t.transaction_type == TransactionType.EXPENSE),
-            Decimal(0),
-        )
-        return {"income": income, "expenses": expenses, "net": income - expenses}
-
-    def group_by_category(trans_list, trans_type=None):
-        categories = {}
-        for t in trans_list:
-            if trans_type and t.transaction_type != trans_type:
-                continue
-            cat = t.category if isinstance(t.category, str) else str(t.category)
-            categories[cat] = categories.get(cat, Decimal(0)) + t.amount
-        return sorted(categories.items(), key=lambda x: x[1], reverse=True)
-
-    # Get top transactions
-    expenses_sorted = sorted(
-        [t for t in all_transactions if t.transaction_type == TransactionType.EXPENSE],
-        key=lambda x: x.amount,
-        reverse=True,
-    )
-    income_sorted = sorted(
-        [t for t in all_transactions if t.transaction_type == TransactionType.INCOME],
-        key=lambda x: x.amount,
-        reverse=True,
-    )
-
-    # Monthly breakdown for trend analysis
-    monthly_data = {}
-    for t in all_transactions:
-        if t.transaction_date:
-            month_key = t.transaction_date.strftime("%Y-%m")
-            if month_key not in monthly_data:
-                monthly_data[month_key] = {"income": Decimal(0), "expenses": Decimal(0)}
-            if t.transaction_type == TransactionType.INCOME:
-                monthly_data[month_key]["income"] += t.amount
-            else:
-                monthly_data[month_key]["expenses"] += t.amount
-
-    # Get user's goals
+    # Get goals
     result = await db.execute(select(Goal).where(Goal.user_id == user_id))
     goals = result.scalars().all()
 
-    # Calculate averages
-    days_with_data = len(
-        set(t.transaction_date.date() for t in all_transactions if t.transaction_date)
-    )
-    total_expenses = sum(
-        (t.amount for t in all_transactions if t.transaction_type == TransactionType.EXPENSE),
-        Decimal(0),
-    )
-    total_income = sum(
-        (t.amount for t in all_transactions if t.transaction_type == TransactionType.INCOME),
-        Decimal(0),
-    )
+    # ========== RAW TRANSACTION DATA ==========
+    # Give LLM every transaction for full analysis capability
+    all_txn_data = []
+    expense_amounts = []
+    income_amounts = []
+    
+    for t in all_transactions:
+        txn = {
+            "date": t.transaction_date.strftime("%Y-%m-%d") if t.transaction_date else "",
+            "amount": float(t.amount),
+            "type": "INCOME" if t.transaction_type == TransactionType.INCOME else "EXPENSE",
+            "category": str(t.category) if t.category else "Uncategorized",
+            "description": t.description or "",
+            "day_of_week": t.transaction_date.strftime("%A") if t.transaction_date else "",
+        }
+        all_txn_data.append(txn)
+        
+        if t.transaction_type == TransactionType.EXPENSE:
+            expense_amounts.append(float(t.amount))
+        else:
+            income_amounts.append(float(t.amount))
 
-    # Find date range of data
+    # ========== PRE-COMPUTED STATISTICS ==========
+    # Help LLM understand what's "normal" vs "anomaly"
+    
+    expense_stats = {}
+    if expense_amounts:
+        expense_stats = {
+            "mean": round(statistics.mean(expense_amounts), 2),
+            "median": round(statistics.median(expense_amounts), 2),
+            "std_dev": round(statistics.stdev(expense_amounts), 2) if len(expense_amounts) > 1 else 0,
+            "min": round(min(expense_amounts), 2),
+            "max": round(max(expense_amounts), 2),
+            "p75": round(sorted(expense_amounts)[int(len(expense_amounts) * 0.75)], 2),
+            "p90": round(sorted(expense_amounts)[int(len(expense_amounts) * 0.90)], 2),
+            "p95": round(sorted(expense_amounts)[int(len(expense_amounts) * 0.95)], 2),
+        }
+
+    # ========== MONTHLY AGGREGATIONS ==========
+    monthly_data: dict[str, dict] = defaultdict(lambda: {"income": 0.0, "expenses": 0.0, "transactions": 0})
+    for t in all_transactions:
+        if t.transaction_date:
+            key = t.transaction_date.strftime("%Y-%m")
+            monthly_data[key]["transactions"] += 1
+            if t.transaction_type == TransactionType.INCOME:
+                monthly_data[key]["income"] += float(t.amount)
+            else:
+                monthly_data[key]["expenses"] += float(t.amount)
+    
+    # Calculate month-over-month changes
+    sorted_months = sorted(monthly_data.keys(), reverse=True)
+    for i, month in enumerate(sorted_months[:-1]):
+        prev_month = sorted_months[i + 1]
+        if monthly_data[prev_month]["expenses"] > 0:
+            monthly_data[month]["expense_change_pct"] = round(
+                ((monthly_data[month]["expenses"] - monthly_data[prev_month]["expenses"]) / 
+                 monthly_data[prev_month]["expenses"]) * 100, 1
+            )
+
+    # ========== CATEGORY ANALYSIS ==========
+    category_data: dict[str, dict] = defaultdict(lambda: {"total": 0.0, "count": 0, "transactions": []})
+    for t in all_transactions:
+        if t.transaction_type == TransactionType.EXPENSE:
+            cat = str(t.category) if t.category else "Uncategorized"
+            category_data[cat]["total"] += float(t.amount)
+            category_data[cat]["count"] += 1
+            if len(category_data[cat]["transactions"]) < 10:
+                category_data[cat]["transactions"].append({
+                    "amount": float(t.amount),
+                    "description": t.description or "",
+                    "date": t.transaction_date.strftime("%Y-%m-%d") if t.transaction_date else ""
+                })
+
+    # ========== MERCHANT/VENDOR ANALYSIS ==========
+    merchant_data: dict[str, dict] = defaultdict(lambda: {"total": 0.0, "count": 0, "amounts": [], "dates": [], "category": ""})
+    for t in all_transactions:
+        if t.transaction_type == TransactionType.EXPENSE and t.description:
+            merchant = t.description.strip()
+            merchant_data[merchant]["total"] += float(t.amount)
+            merchant_data[merchant]["count"] += 1
+            merchant_data[merchant]["amounts"].append(float(t.amount))
+            merchant_data[merchant]["category"] = str(t.category) if t.category else "Uncategorized"
+            if t.transaction_date:
+                merchant_data[merchant]["dates"].append(t.transaction_date)
+
+    # Detect recurring (subscriptions)
+    recurring = []
+    for merchant, data in merchant_data.items():
+        if data["count"] >= 2 and len(data["dates"]) >= 2:
+            dates = sorted(data["dates"])
+            avg_days = (dates[-1] - dates[0]).days / (len(dates) - 1) if len(dates) > 1 else 0
+            
+            # Determine frequency
+            if 25 <= avg_days <= 35:
+                frequency = "monthly"
+            elif 5 <= avg_days <= 9:
+                frequency = "weekly"
+            elif 80 <= avg_days <= 100:
+                frequency = "quarterly"
+            elif 350 <= avg_days <= 380:
+                frequency = "yearly"
+            else:
+                frequency = f"every ~{int(avg_days)} days" if avg_days > 0 else "irregular"
+            
+            # Check if amounts are consistent (subscription-like)
+            amounts = data["amounts"]
+            is_consistent = max(amounts) - min(amounts) < 5  # Within $5
+            
+            recurring.append({
+                "merchant": merchant,
+                "amount": round(statistics.mean(amounts), 2),
+                "frequency": frequency,
+                "count": data["count"],
+                "total_spent": round(data["total"], 2),
+                "is_subscription": is_consistent and frequency in ["monthly", "weekly", "yearly", "quarterly"],
+                "category": data["category"],
+                "last_date": max(dates).strftime("%Y-%m-%d") if dates else ""
+            })
+
+    # ========== ANOMALY DETECTION (Pre-computed for LLM) ==========
+    anomalies = []
+    if expense_stats:
+        threshold = expense_stats["mean"] + (2 * expense_stats.get("std_dev", 0))
+        for t in all_transactions:
+            if t.transaction_type == TransactionType.EXPENSE and float(t.amount) > threshold:
+                anomalies.append({
+                    "date": t.transaction_date.strftime("%Y-%m-%d") if t.transaction_date else "",
+                    "amount": float(t.amount),
+                    "description": t.description or "",
+                    "category": str(t.category) if t.category else "",
+                    "times_above_mean": round(float(t.amount) / expense_stats["mean"], 1) if expense_stats["mean"] > 0 else 0,
+                    "reason": "Significantly above average spending"
+                })
+
+    # Check for category spikes (month over month)
+    current_month = now.strftime("%Y-%m")
+    last_month = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    
+    current_month_cats = defaultdict(float)
+    last_month_cats = defaultdict(float)
+    for t in all_transactions:
+        if t.transaction_type == TransactionType.EXPENSE and t.transaction_date:
+            month_key = t.transaction_date.strftime("%Y-%m")
+            cat = str(t.category) if t.category else "Uncategorized"
+            if month_key == current_month:
+                current_month_cats[cat] += float(t.amount)
+            elif month_key == last_month:
+                last_month_cats[cat] += float(t.amount)
+    
+    category_spikes = []
+    for cat, current_amt in current_month_cats.items():
+        last_amt = last_month_cats.get(cat, 0)
+        if last_amt > 0:
+            change_pct = ((current_amt - last_amt) / last_amt) * 100
+            if change_pct > 50:  # 50%+ increase
+                category_spikes.append({
+                    "category": cat,
+                    "current_month": round(current_amt, 2),
+                    "last_month": round(last_amt, 2),
+                    "change_pct": round(change_pct, 1),
+                    "reason": "Category spending spike"
+                })
+
+    # ========== TIME-BASED SUMMARIES ==========
+    dates = get_date_ranges()
+    
+    def calc_totals(txns):
+        income = sum((float(t.amount) for t in txns if t.transaction_type == TransactionType.INCOME), 0)
+        expenses = sum((float(t.amount) for t in txns if t.transaction_type == TransactionType.EXPENSE), 0)
+        return {"income": round(income, 2), "expenses": round(expenses, 2), "net": round(income - expenses, 2)}
+
+    week_txns = [t for t in all_transactions if t.transaction_date and t.transaction_date >= dates["week_start"]]
+    month_txns = [t for t in all_transactions if t.transaction_date and t.transaction_date >= dates["month_start"]]
+    last_month_txns = [t for t in all_transactions if t.transaction_date and dates["last_month_start"] <= t.transaction_date <= dates["last_month_end"]]
+    year_txns = [t for t in all_transactions if t.transaction_date and t.transaction_date >= dates["year_start"]]
+
+    # Calculate date range of data
     dates_list = [t.transaction_date for t in all_transactions if t.transaction_date]
-    earliest_date = min(dates_list) if dates_list else now
-    latest_date = max(dates_list) if dates_list else now
+    earliest = min(dates_list) if dates_list else now
+    latest = max(dates_list) if dates_list else now
+    days_of_data = (latest - earliest).days + 1
 
     return {
         "has_data": True,
-        "dates": dates,
-        "now": now,
-        "month_name": now.strftime("%B %Y"),
-        "last_month_name": dates["last_month_start"].strftime("%B %Y"),
-        # Transaction counts
-        "total_transactions": len(all_transactions),
-        "month_transaction_count": len(month_transactions),
-        "week_transaction_count": len(week_transactions),
-        # Current month
-        "month": calc_totals(month_transactions),
-        "month_categories_expense": group_by_category(month_transactions, TransactionType.EXPENSE),
-        "month_categories_income": group_by_category(month_transactions, TransactionType.INCOME),
-        # Last month
-        "last_month": calc_totals(last_month_transactions),
-        "last_month_categories": group_by_category(
-            last_month_transactions, TransactionType.EXPENSE
-        ),
-        # This week
-        "week": calc_totals(week_transactions),
-        "week_categories": group_by_category(week_transactions, TransactionType.EXPENSE),
-        # Last week
-        "last_week": calc_totals(last_week_transactions),
-        # This year
-        "year": calc_totals(year_transactions),
-        "year_categories": group_by_category(year_transactions, TransactionType.EXPENSE),
-        # All time
+        "generated_at": now.strftime("%Y-%m-%d %H:%M UTC"),
+        "data_range": {
+            "earliest": earliest.strftime("%Y-%m-%d"),
+            "latest": latest.strftime("%Y-%m-%d"),
+            "days": days_of_data,
+            "total_transactions": len(all_transactions)
+        },
+        
+        # Time-based summaries
+        "this_week": calc_totals(week_txns),
+        "this_month": calc_totals(month_txns),
+        "last_month": calc_totals(last_month_txns),
+        "this_year": calc_totals(year_txns),
         "all_time": calc_totals(all_transactions),
-        "all_categories": group_by_category(all_transactions, TransactionType.EXPENSE),
-        # Top transactions
-        "top_expenses": [
-            {
-                "amount": t.amount,
-                "category": t.category,
-                "description": t.description,
-                "date": t.transaction_date.strftime("%b %d, %Y") if t.transaction_date else "N/A",
-            }
-            for t in expenses_sorted[:10]
-        ],
-        "top_income": [
-            {
-                "amount": t.amount,
-                "category": t.category,
-                "description": t.description,
-                "date": t.transaction_date.strftime("%b %d, %Y") if t.transaction_date else "N/A",
-            }
-            for t in income_sorted[:5]
-        ],
-        # Averages
-        "days_tracked": days_with_data,
-        "daily_expense_avg": total_expenses / max(days_with_data, 1),
-        "daily_income_avg": total_income / max(days_with_data, 1),
-        # Trends
-        "monthly_data": monthly_data,
-        "earliest_date": earliest_date,
-        "latest_date": latest_date,
+        
+        # Statistical analysis
+        "expense_statistics": expense_stats,
+        
+        # Monthly breakdown (all months)
+        "monthly_breakdown": dict(sorted(monthly_data.items(), reverse=True)),
+        
+        # Category breakdown
+        "categories": {k: {"total": round(v["total"], 2), "count": v["count"], "avg": round(v["total"]/v["count"], 2) if v["count"] > 0 else 0} 
+                      for k, v in sorted(category_data.items(), key=lambda x: x[1]["total"], reverse=True)},
+        
+        # Merchants/Vendors
+        "merchants": sorted([{"name": k, "total": round(v["total"], 2), "count": v["count"], "category": v["category"]} 
+                           for k, v in merchant_data.items()], key=lambda x: x["total"], reverse=True)[:50],
+        
+        # Recurring/Subscriptions
+        "recurring_payments": sorted([r for r in recurring if r["count"] >= 2], key=lambda x: x["total_spent"], reverse=True)[:30],
+        "likely_subscriptions": [r for r in recurring if r.get("is_subscription")],
+        
+        # Anomalies (pre-flagged)
+        "anomalies": {
+            "large_transactions": anomalies[:20],
+            "category_spikes": category_spikes,
+        },
+        
         # Goals
-        "goals": [
-            {
-                "name": g.name,
-                "type": (g.goal_type.value if hasattr(g.goal_type, "value") else str(g.goal_type)),
-                "target": float(g.target_amount),
-                "current": float(g.current_amount),
-                "target_date": g.target_date.isoformat() if g.target_date else None,
-                "status": (g.status.value if hasattr(g.status, "value") else str(g.status)),
-            }
-            for g in goals
-        ],
+        "goals": [{"name": g.name, "target": float(g.target_amount), "current": float(g.current_amount),
+                   "progress_pct": round(float(g.current_amount) / float(g.target_amount) * 100, 1) if g.target_amount > 0 else 0,
+                   "status": g.status.value if hasattr(g.status, "value") else str(g.status)}
+                  for g in goals],
+        
+        # Note: Raw transactions not sent to LLM - only summaries + anomalies
     }
 
 
-def generate_ai_response(message: str, context: dict) -> str:
-    """
-    Generate AI response based on user message and comprehensive financial context.
-    Handles a wide variety of financial questions.
-    """
-    if not context.get("has_data"):
-        return context.get("message", "No financial data available yet.")
-
-    message_lower = message.lower()
-
-    # Helper to format category name
-    def fmt_cat(cat):
-        if not cat:
-            return "Uncategorized"
-        return str(cat).replace("_", " ").title()
-
-    # ============================================
-    # TOTAL / ALL TIME QUESTIONS
-    # ============================================
-    if any(
-        phrase in message_lower
-        for phrase in [
-            "total",
-            "all time",
-            "ever",
-            "overall",
-            "lifetime",
-            "till now",
-            "so far",
-            "to date",
-        ]
-    ):
-        all_time = context["all_time"]
-
-        if "income" in message_lower and "expense" not in message_lower:
-            earliest = context["earliest_date"].strftime("%b %d, %Y")
-            latest = context["latest_date"].strftime("%b %d, %Y")
-            return (
-                f"💵 **Your Total Income (All Time):**\n\n"
-                f"Total Income: {format_currency(all_time['income'])}\n"
-                f"Across {context['total_transactions']} transactions\n"
-                f"Data from {earliest} to {latest}"
-            )
-
-        if "expense" in message_lower or "spend" in message_lower or "spent" in message_lower:
-            response = "💸 **Your Total Expenses (All Time):**\n\n"
-            response += f"Total Spent: {format_currency(all_time['expenses'])}\n\n"
-
-            if context["all_categories"]:
-                response += "**Top Categories:**\n"
-                for cat, amount in context["all_categories"][:5]:
-                    pct = (
-                        float(amount) / float(all_time["expenses"]) * 100
-                        if all_time["expenses"] > 0
-                        else 0
-                    )
-                    response += f"• {fmt_cat(cat)}: {format_currency(amount)} ({pct:.1f}%)\n"
-
-            return response
-
-        # General total summary
-        earliest = context["earliest_date"].strftime("%b %d, %Y")
-        latest = context["latest_date"].strftime("%b %d, %Y")
-        return (
-            f"📊 **Your Financial Summary (All Time):**\n\n"
-            f"• Total Income: {format_currency(all_time['income'])}\n"
-            f"• Total Expenses: {format_currency(all_time['expenses'])}\n"
-            f"• Net Balance: {format_currency(all_time['net'])}\n"
-            f"• Transactions: {context['total_transactions']}\n"
-            f"• Days Tracked: {context['days_tracked']}\n\n"
-            f"📅 Data from {earliest} to {latest}"
-        )
-
-    # ============================================
-    # THIS YEAR QUESTIONS
-    # ============================================
-    if any(
-        phrase in message_lower
-        for phrase in ["this year", "year to date", "ytd", str(datetime.now().year)]
-    ):
-        year = context["year"]
-        response = f"📆 **{datetime.now().year} Financial Summary:**\n\n"
-        response += f"• Income: {format_currency(year['income'])}\n"
-        response += f"• Expenses: {format_currency(year['expenses'])}\n"
-        response += f"• Net: {format_currency(year['net'])}\n\n"
-
-        if context["year_categories"]:
-            response += "**Top Spending Categories:**\n"
-            for cat, amount in context["year_categories"][:5]:
-                response += f"• {fmt_cat(cat)}: {format_currency(amount)}\n"
-
-        return response
-
-    # ============================================
-    # LAST MONTH COMPARISON
-    # ============================================
-    if any(
-        phrase in message_lower
-        for phrase in ["last month", "previous month", "compare", "comparison"]
-    ):
-        month = context["month"]
-        last_month = context["last_month"]
-
-        response = "📊 **Month Comparison:**\n\n"
-        response += f"**{context['month_name']}:**\n"
-        response += f"• Income: {format_currency(month['income'])}\n"
-        response += f"• Expenses: {format_currency(month['expenses'])}\n"
-        response += f"• Net: {format_currency(month['net'])}\n\n"
-
-        response += f"**{context['last_month_name']}:**\n"
-        response += f"• Income: {format_currency(last_month['income'])}\n"
-        response += f"• Expenses: {format_currency(last_month['expenses'])}\n"
-        response += f"• Net: {format_currency(last_month['net'])}\n\n"
-
-        # Calculate changes
-        if last_month["expenses"] > 0:
-            expense_change = (
-                (month["expenses"] - last_month["expenses"]) / last_month["expenses"]
-            ) * 100
-            if expense_change > 0:
-                response += f"⚠️ Expenses increased by {expense_change:.1f}% from last month\n"
-            else:
-                response += f"✅ Expenses decreased by {abs(expense_change):.1f}% from last month\n"
-
-        return response
-
-    # ============================================
-    # THIS WEEK / LAST WEEK
-    # ============================================
-    if any(phrase in message_lower for phrase in ["this week", "week"]):
-        week = context["week"]
-        response = "📅 **This Week's Summary:**\n\n"
-        response += f"• Income: {format_currency(week['income'])}\n"
-        response += f"• Expenses: {format_currency(week['expenses'])}\n"
-        response += f"• Net: {format_currency(week['net'])}\n"
-        response += f"• Transactions: {context['week_transaction_count']}\n\n"
-
-        if context["week_categories"]:
-            response += "**Spending by Category:**\n"
-            for cat, amount in context["week_categories"][:5]:
-                response += f"• {fmt_cat(cat)}: {format_currency(amount)}\n"
-
-        # Compare to last week
-        last_week = context["last_week"]
-        if last_week["expenses"] > 0:
-            change = ((week["expenses"] - last_week["expenses"]) / last_week["expenses"]) * 100
-            response += "\n📈 Compared to last week: "
-            if change > 0:
-                response += f"spending up {change:.1f}%"
-            else:
-                response += f"spending down {abs(change):.1f}%"
-
-        return response
-
-    # ============================================
-    # TOP / LARGEST / BIGGEST TRANSACTIONS
-    # ============================================
-    if any(
-        phrase in message_lower
-        for phrase in ["top", "largest", "biggest", "highest", "most expensive"]
-    ):
-        if "income" in message_lower:
-            response = "💰 **Your Largest Income Transactions:**\n\n"
-            for i, t in enumerate(context["top_income"][:5], 1):
-                desc = t["description"] or fmt_cat(t["category"])
-                response += f"{i}. {format_currency(t['amount'])} - {desc}\n"
-                response += f"   📅 {t['date']}\n"
-            return response
-
-        # Default to expenses
-        response = "💸 **Your Largest Expenses:**\n\n"
-        for i, t in enumerate(context["top_expenses"][:5], 1):
-            desc = t["description"] or fmt_cat(t["category"])
-            response += f"{i}. {format_currency(t['amount'])} - {desc}\n"
-            response += f"   📅 {t['date']}\n"
-        return response
-
-    # ============================================
-    # AVERAGE / DAILY SPENDING
-    # ============================================
-    if any(phrase in message_lower for phrase in ["average", "avg", "daily", "per day"]):
-        daily_exp = context["daily_expense_avg"]
-        daily_inc = context["daily_income_avg"]
-
-        response = "📊 **Your Daily Averages:**\n\n"
-        response += f"• Average Daily Spending: {format_currency(daily_exp)}\n"
-        response += f"• Average Daily Income: {format_currency(daily_inc)}\n"
-        response += f"• Based on {context['days_tracked']} days of data\n\n"
-
-        # Project monthly
-        response += "**Projected Monthly:**\n"
-        response += f"• Monthly Expenses: ~{format_currency(daily_exp * 30)}\n"
-        response += f"• Monthly Income: ~{format_currency(daily_inc * 30)}\n"
-
-        return response
-
-    # ============================================
-    # CATEGORY-SPECIFIC QUESTIONS
-    # ============================================
-    # Check if user is asking about a specific category
-    all_categories = {cat.lower(): cat for cat, _ in context.get("all_categories", [])}
-    asked_category = None
-
-    category_keywords = [
-        "food",
-        "dining",
-        "groceries",
-        "transport",
-        "transportation",
-        "shopping",
-        "entertainment",
-        "utilities",
-        "health",
-        "healthcare",
-        "education",
-        "rent",
-        "housing",
-        "subscription",
-        "travel",
-        "coffee",
-        "drinks",
-    ]
-
-    for keyword in category_keywords:
-        if keyword in message_lower:
-            # Find matching category
-            for cat_lower, cat_original in all_categories.items():
-                if keyword in cat_lower or cat_lower in keyword:
-                    asked_category = cat_original
-                    break
-            break
-
-    if asked_category:
-        # Find spending for this category across periods
-        month_cat = next(
-            (amt for cat, amt in context["month_categories_expense"] if cat == asked_category),
-            Decimal(0),
-        )
-        all_cat = next(
-            (amt for cat, amt in context["all_categories"] if cat == asked_category), Decimal(0)
-        )
-
-        response = f"🏷️ **{fmt_cat(asked_category)} Spending:**\n\n"
-        response += f"• This Month: {format_currency(month_cat)}\n"
-        response += f"• All Time: {format_currency(all_cat)}\n"
-
-        total_exp = context["all_time"]["expenses"]
-        if total_exp > 0:
-            pct = float(all_cat) / float(total_exp) * 100
-            response += f"• Percentage of Total: {pct:.1f}%\n"
-
-        return response
-
-    # ============================================
-    # EXPENSE / SPENDING QUESTIONS (GENERAL)
-    # ============================================
-    if any(
-        keyword in message_lower
-        for keyword in ["spend", "spent", "spending", "expense", "expenses"]
-    ):
-        month = context["month"]
-
-        response = f"📊 **Spending Summary for {context['month_name']}:**\n\n"
-        response += f"• Total Expenses: {format_currency(month['expenses'])}\n"
-        response += f"• Total Income: {format_currency(month['income'])}\n"
-
-        if month["net"] >= 0:
-            response += f"• Net Savings: +{format_currency(month['net'])} ✅\n\n"
-        else:
-            response += f"• Net Loss: {format_currency(month['net'])} ⚠️\n\n"
-
-        if context["month_categories_expense"]:
-            response += "**Spending by Category:**\n"
-            for cat, amount in context["month_categories_expense"][:7]:
-                pct = float(amount) / float(month["expenses"]) * 100 if month["expenses"] > 0 else 0
-                response += f"• {fmt_cat(cat)}: {format_currency(amount)} ({pct:.1f}%)\n"
-
-            if context["month_categories_expense"]:
-                top_cat = fmt_cat(context["month_categories_expense"][0][0])
-                response += f"\n💡 **Tip:** Your top spending category is {top_cat}."
-
-        return response
-
-    # ============================================
-    # SAVINGS QUESTIONS
-    # ============================================
-    if any(keyword in message_lower for keyword in ["save", "saving", "savings", "saved"]):
-        month = context["month"]
-        net = month["net"]
-
-        if net >= 0:
-            response = f"🎉 **Great news!** This month you're saving {format_currency(net)}!\n\n"
-            response += "**Your Savings Rate:**\n"
-            if month["income"] > 0:
-                rate = (float(net) / float(month["income"])) * 100
-                response += f"• {rate:.1f}% of your income\n\n"
-
-            response += "**Tips to save even more:**\n"
-            if context["month_categories_expense"]:
-                top_cat = fmt_cat(context["month_categories_expense"][0][0])
-                response += f"1. Review your {top_cat} spending - it's your highest category\n"
-            response += "2. Set up automatic transfers to savings\n"
-            response += "3. Try the 50/30/20 budgeting rule\n"
-        else:
-            overspend = format_currency(abs(net))
-            response = f"⚠️ This month you're spending more than earning by {overspend}.\n\n"
-            response += "**How to turn this around:**\n"
-            if context["month_categories_expense"]:
-                top_cat, top_amt = context["month_categories_expense"][0]
-                response += (
-                    f"1. Your biggest expense is {fmt_cat(top_cat)} ({format_currency(top_amt)})\n"
-                )
-            response += "2. Track daily expenses for a week\n"
-            response += "3. Find subscriptions to cancel\n"
-            response += "4. Look for income opportunities\n"
-
-        return response
-
-    # ============================================
-    # INCOME QUESTIONS
-    # ============================================
-    if any(
-        keyword in message_lower for keyword in ["income", "earn", "earned", "salary", "revenue"]
-    ):
-        month = context["month"]
-
-        response = f"💵 **Income for {context['month_name']}:**\n\n"
-        response += f"• Total Income: {format_currency(month['income'])}\n"
-        response += f"• Total Expenses: {format_currency(month['expenses'])}\n"
-        response += f"• Remaining: {format_currency(month['net'])}\n\n"
-
-        if context["month_categories_income"]:
-            response += "**Income Sources:**\n"
-            for cat, amount in context["month_categories_income"]:
-                response += f"• {fmt_cat(cat)}: {format_currency(amount)}\n"
-
-        return response
-
-    # ============================================
-    # GOAL QUESTIONS
-    # ============================================
-    if any(keyword in message_lower for keyword in ["goal", "goals", "target", "challenge"]):
-        goals = context["goals"]
-
-        if not goals:
-            return (
-                "🎯 **No Goals Set Yet!**\n\n"
-                "Financial goals help you stay on track. Go to the Goals page to create:\n"
-                "• **Savings Goals** - Save a target amount by a deadline\n"
-                "• **Spending Limits** - Keep category spending under control\n\n"
-                "Would you like tips on setting effective financial goals?"
-            )
-
-        response = "📋 **Your Financial Goals:**\n\n"
-        for g in goals:
-            emoji = "💰" if g["type"] == "savings" else "🚫"
-            status_emoji = "✅" if g["status"] == "completed" else "⏳"
-
-            response += f"{emoji} **{g['name']}** {status_emoji}\n"
-            response += f"   Target: {format_currency(Decimal(g['target']))}\n"
-            if g["category"]:
-                response += f"   Category: {fmt_cat(g['category'])}\n"
-            response += f"   Days Remaining: {g['days_remaining']}\n\n"
-
-        return response
-
-    # ============================================
-    # BUDGET ADVICE
-    # ============================================
-    if any(keyword in message_lower for keyword in ["budget", "budgeting", "plan", "allocate"]):
-        month = context["month"]
-        income_val = float(month["income"]) if month["income"] else 0
-
-        response = "📝 **Budget Recommendations (50/30/20 Rule):**\n\n"
-
-        if income_val > 0:
-            response += f"Based on your income of {format_currency(month['income'])}:\n\n"
-            response += f"• **Needs (50%):** {format_currency(Decimal(income_val * 0.5))}\n"
-            response += "  Housing, utilities, groceries, healthcare\n\n"
-            response += f"• **Wants (30%):** {format_currency(Decimal(income_val * 0.3))}\n"
-            response += "  Entertainment, dining out, shopping\n\n"
-            response += f"• **Savings (20%):** {format_currency(Decimal(income_val * 0.2))}\n"
-            response += "  Emergency fund, investments\n\n"
-
-            # Compare to actual
-            if context["month_categories_expense"]:
-                response += "**Your Actual Spending:**\n"
-                for cat, amount in context["month_categories_expense"][:3]:
-                    response += f"• {fmt_cat(cat)}: {format_currency(amount)}\n"
-        else:
-            response += "Add income transactions to get personalized budget recommendations!"
-
-        return response
-
-    # ============================================
-    # TREND QUESTIONS
-    # ============================================
-    if any(keyword in message_lower for keyword in ["trend", "pattern", "history", "over time"]):
-        monthly = context["monthly_data"]
-
-        if len(monthly) < 2:
-            return "📈 Need at least 2 months of data to show trends. Keep tracking!"
-
-        response = "📈 **Monthly Trends:**\n\n"
-
-        # Sort by date and show last 6 months
-        sorted_months = sorted(monthly.items(), key=lambda x: x[0], reverse=True)[:6]
-
-        for month_key, data in sorted_months:
-            year, mon = month_key.split("-")
-            month_name = datetime(int(year), int(mon), 1).strftime("%b %Y")
-            response += f"**{month_name}:**\n"
-            response += f"  Income: {format_currency(data['income'])} | "
-            response += f"Expenses: {format_currency(data['expenses'])}\n"
-
-        # Calculate trend
-        if len(sorted_months) >= 2:
-            recent = sorted_months[0][1]["expenses"]
-            previous = sorted_months[1][1]["expenses"]
-            if previous > 0:
-                change = ((recent - previous) / previous) * 100
-                if change > 10:
-                    response += f"\n⚠️ Expenses trending up by {change:.1f}%"
-                elif change < -10:
-                    response += f"\n✅ Expenses trending down by {abs(change):.1f}%"
-
-        return response
-
-    # ============================================
-    # ANOMALY DETECTION
-    # ============================================
-    if any(
-        phrase in message_lower
-        for phrase in [
-            "anomal",
-            "unusual",
-            "weird",
-            "strange",
-            "suspicious",
-            "spike",
-            "unexpected",
-            "surprise",
-            "odd",
-            "abnormal",
-        ]
-    ):
-        anomalies = detect_anomalies(context)
-
-        if not anomalies["has_anomalies"]:
-            return (
-                "✅ **No Unusual Activity Detected**\n\n"
-                "Your spending patterns look normal! No significant anomalies found.\n\n"
-                "I check for:\n"
-                "• Large transactions (3x above your daily average)\n"
-                "• Category spikes (50%+ increase from last month)\n"
-                "• New spending categories\n"
-                "• Monthly spending surges"
-            )
-
-        response = "🔍 **Anomaly Detection Report:**\n\n"
-
-        # Large transactions
-        if anomalies["large_transactions"]:
-            response += "**💰 Large Transactions:**\n"
-            for t in anomalies["large_transactions"][:3]:
-                cat_name = fmt_cat(t["category"])
-                response += (
-                    f"• {format_currency(t['amount'])} on {cat_name}\n"
-                    f"  ({t['multiple']}x your daily average)\n"
-                )
-            response += "\n"
-
-        # Category spikes
-        if anomalies["category_spikes"]:
-            response += "**📈 Category Spikes:**\n"
-            for spike in anomalies["category_spikes"][:3]:
-                cat_name = fmt_cat(spike["category"])
-                response += (
-                    f"• {cat_name}: +{spike['change_pct']}% "
-                    f"({format_currency(spike['previous'])} → "
-                    f"{format_currency(spike['current'])})\n"
-                )
-            response += "\n"
-
-        # New categories
-        if anomalies["new_categories"]:
-            response += "**🆕 New Categories This Month:**\n"
-            for cat in anomalies["new_categories"][:3]:
-                cat_name = fmt_cat(cat["category"])
-                response += f"• {cat_name}: {format_currency(cat['amount'])}\n"
-            response += "\n"
-
-        # Monthly spike
-        for freq in anomalies["frequency_anomalies"]:
-            if freq["type"] == "monthly_spike":
-                response += (
-                    f"**⚠️ Monthly Spending Spike:** +{freq['change_pct']}%\n"
-                    f"This month: {format_currency(freq['current'])} vs "
-                    f"Last month: {format_currency(freq['previous'])}\n"
-                )
-
-        return response
-
-    # ============================================
-    # FORECAST / FUTURE INSIGHTS
-    # ============================================
-    if any(
-        phrase in message_lower
-        for phrase in [
-            "forecast",
-            "predict",
-            "projection",
-            "end of month",
-            "future",
-            "will i",
-            "estimate",
-            "outlook",
-        ]
-    ):
-        forecast = generate_forecast(context)
-        eom = forecast["end_of_month"]
-
-        response = "🔮 **Financial Forecast:**\n\n"
-
-        # End of month projection
-        response += f"**📅 End of Month Projection ({eom['days_remaining']} days left):**\n"
-        response += f"• Projected Expenses: {format_currency(eom['projected_expenses'])}\n"
-        response += f"• Projected Income: {format_currency(eom['projected_income'])}\n"
-        response += f"• Projected Net: {format_currency(eom['projected_net'])}\n"
-        daily_rate = format_currency(eom["current_daily_expense_rate"])
-        response += f"• Daily Spending Rate: {daily_rate}\n\n"
-
-        # Budget status
-        status_emoji = {
-            "excellent": "🌟",
-            "good": "👍",
-            "fair": "⚠️",
-            "over_budget": "🚨",
-        }
-        status_text = {
-            "excellent": "Excellent! Saving 20%+",
-            "good": "Good! Saving 10-20%",
-            "fair": "Fair - Room to improve",
-            "over_budget": "Over Budget - Action needed!",
-        }
-        status = forecast["budget_status"]
-        response += f"**Budget Status:** {status_emoji.get(status, '📊')} "
-        response += f"{status_text.get(status, 'Unknown')}\n\n"
-
-        # Spending trend
-        trend_emoji = {
-            "increasing": "📈",
-            "slightly_increasing": "↗️",
-            "stable": "➡️",
-            "slightly_decreasing": "↘️",
-            "decreasing": "📉",
-        }
-        trend_text = {
-            "increasing": "Increasing (watch out!)",
-            "slightly_increasing": "Slightly increasing",
-            "stable": "Stable",
-            "slightly_decreasing": "Slightly decreasing (good!)",
-            "decreasing": "Decreasing (great!)",
-        }
-        trend = forecast["spending_trend"]
-        response += f"**Spending Trend:** {trend_emoji.get(trend, '📊')} "
-        response += f"{trend_text.get(trend, trend)}\n\n"
-
-        # Goal projections
-        if forecast["savings_projection"]:
-            response += "**🎯 Goal Timeline:**\n"
-            for proj in forecast["savings_projection"]:
-                status_icon = "✅" if proj["on_track"] else "⚠️"
-                months = proj["months_to_goal"]
-                if months < 1:
-                    time_str = "Less than a month!"
-                elif months < 12:
-                    time_str = f"~{months:.0f} month(s)"
-                else:
-                    years = months / 12
-                    time_str = f"~{years:.1f} year(s)"
-                response += (
-                    f"• {proj['goal_name']}: {status_icon} {time_str} "
-                    f"({format_currency(proj['remaining'])} to go)\n"
-                )
-            response += "\n"
-
-        # Recommendations
-        if forecast["recommendations"]:
-            response += "**💡 Insights:**\n"
-            for rec in forecast["recommendations"]:
-                response += f"{rec}\n"
-
-        return response
-
-    # ============================================
-    # FINANCIAL HEALTH / SCORE
-    # ============================================
-    if any(
-        phrase in message_lower
-        for phrase in ["health", "score", "how am i doing", "financial health"]
-    ):
-        month = context["month"]
-
-        response = "🏥 **Your Financial Health Check:**\n\n"
-
-        # Calculate savings rate
-        savings_rate = 0
-        if month["income"] > 0:
-            savings_rate = float(month["net"]) / float(month["income"]) * 100
-
-        # Score calculation
-        score = 50  # Base score
-
-        if savings_rate >= 20:
-            score += 25
-            response += "✅ Excellent savings rate (20%+)\n"
-        elif savings_rate >= 10:
-            score += 15
-            response += "👍 Good savings rate (10-20%)\n"
-        elif savings_rate >= 0:
-            score += 5
-            response += "⚠️ Breaking even - try to save more\n"
-        else:
-            response += "❌ Spending exceeds income\n"
-
-        # Check if tracking consistently
-        if context["month_transaction_count"] >= 10:
-            score += 15
-            response += "✅ Good transaction tracking\n"
-        else:
-            response += "⚠️ Track more transactions for better insights\n"
-
-        # Check goals
-        if context["goals"]:
-            score += 10
-            response += f"✅ {len(context['goals'])} financial goal(s) set\n"
-        else:
-            response += "⚠️ No financial goals set\n"
-
-        response += f"\n**Health Score: {min(score, 100)}/100**\n"
-
-        if score >= 80:
-            response += "🌟 You're doing great!"
-        elif score >= 60:
-            response += "👍 Good progress, keep improving!"
-        else:
-            response += "💪 Room for improvement - let's work on it!"
-
-        return response
-
-    # ============================================
-    # HELP / WHAT CAN YOU DO
-    # ============================================
-    if any(
-        keyword in message_lower for keyword in ["help", "what can you", "commands", "how to", "?"]
-    ):
-        return (
-            "🤖 **I'm your AI Financial Coach!** Here's what you can ask:\n\n"
-            "**📊 Spending & Income:**\n"
-            '• "What are my total expenses?"\n'
-            '• "How much did I spend this month?"\n'
-            '• "Show my spending by category"\n\n'
-            "**📈 Comparisons & Trends:**\n"
-            '• "Compare to last month"\n'
-            '• "What are my spending trends?"\n\n'
-            "**🔮 Forecasting & Insights:**\n"
-            '• "What\'s my forecast for this month?"\n'
-            '• "Predict my end of month balance"\n'
-            '• "What\'s my financial outlook?"\n\n'
-            "**🔍 Anomaly Detection:**\n"
-            '• "Any unusual spending?"\n'
-            '• "Detect anomalies in my spending"\n'
-            '• "Any suspicious transactions?"\n\n'
-            "**💰 Analysis & Health:**\n"
-            '• "What\'s my financial health score?"\n'
-            '• "What are my largest expenses?"\n'
-            '• "Give me budgeting advice"\n\n'
-            "**🎯 Goals:**\n"
-            '• "What are my goals?"\n'
-            '• "How long to reach my goals?"\n'
-        )
-
-    # ============================================
-    # NO MATCH - Return None to trigger AI fallback
-    # ============================================
-    return None  # type: ignore[return-value]
-
-
-def build_ai_prompt(message: str, context: dict) -> str:
-    """Build a privacy-safe prompt for the AI model with financial context only."""
-
-    # SECURITY: Sanitize user message before sending to AI
-    safe_message = sanitize_for_ai(message)
-
-    # Helper to format category name
-    def fmt_cat(cat):
-        if not cat:
-            return "Uncategorized"
-        return str(cat).replace("_", " ").title()
-
-    month = context.get("month", {})
-    all_time = context.get("all_time", {})
-
-    # Build financial summary for the AI (NO PII - just financial data)
-    financial_summary = f"""
-USER'S FINANCIAL DATA (Anonymous - no personal identifiers):
-
-Current Month ({context.get('month_name', 'This Month')}):
-- Income: ${float(month.get('income', 0)):,.2f}
-- Expenses: ${float(month.get('expenses', 0)):,.2f}
-- Net Savings: ${float(month.get('net', 0)):,.2f}
-- Transaction Count: {context.get('month_transaction_count', 0)}
-
-All Time Summary:
-- Total Income: ${float(all_time.get('income', 0)):,.2f}
-- Total Expenses: ${float(all_time.get('expenses', 0)):,.2f}
-- Net Balance: ${float(all_time.get('net', 0)):,.2f}
-- Total Transactions: {context.get('total_transactions', 0)}
-- Days Tracked: {context.get('days_tracked', 0)}
-
-Top Spending Categories This Month:
+# ============================================
+# LLM INTEGRATION
+# ============================================
+SYSTEM_PROMPT = """You are **FinanceGPT**, an expert AI Financial Coach and Behavioral Money Mentor. Your mission is to transform users' relationship with money through data-driven insights, emotional intelligence, and proven behavioral psychology techniques.
+
+## 🎯 YOUR CORE MISSION
+Help users achieve financial wellness by making them FEEL empowered, motivated, and in control of their money. You're not just analyzing numbers—you're changing lives through better financial habits.
+
+## 💪 YOUR PERSONALITY
+- **Warm & Encouraging**: Like a supportive friend who happens to be a financial expert
+- **Celebratory**: Recognize EVERY win, no matter how small ("You spent $20 less on dining this week—that's a movie ticket saved! 🎬")
+- **Non-Judgmental**: Never shame or criticize spending choices; focus on opportunities
+- **Motivational**: Use positive psychology to inspire action
+- **Relatable**: Use analogies and real-life examples to explain concepts
+
+## 📊 YOUR CAPABILITIES
+
+### 1. FINANCIAL HEALTH ASSESSMENT
+Evaluate overall financial wellness using these metrics:
+- **Savings Rate**: <10% (Needs Work) | 10-20% (Good) | 20%+ (Excellent)
+- **Expense Ratio**: Is spending sustainable relative to income?
+- **Category Balance**: Any single category consuming >30% of expenses?
+- **Trend Direction**: Is financial health improving or declining?
+- **Emergency Readiness**: Progress toward 3-6 months expenses saved
+
+Provide a clear "Financial Health Score" (1-100) with specific improvement areas.
+
+### 2. SPENDING INSIGHTS & PATTERNS
+- Identify top spending categories and their % of total
+- Spot recurring expenses that might be forgotten subscriptions
+- Find "money leaks" (small frequent purchases that add up)
+- Compare current period vs previous periods
+- Highlight category spikes with potential explanations
+
+### 3. BEHAVIORAL NUDGES & HABIT FORMATION
+Apply behavioral economics principles:
+- **Loss Aversion**: "Continuing this pattern means missing out on $X for your goals"
+- **Social Proof**: "Top savers typically keep dining under 15% of expenses"
+- **Commitment Devices**: Suggest specific, time-bound savings challenges
+- **Mental Accounting**: Help users think in terms of "hours worked" or "goal progress"
+- **Temptation Bundling**: Pair saving with rewards ("Save $50 this week, treat yourself to...")
+
+### 4. FORECASTING & PROJECTIONS
+Based on current patterns, predict:
+- End-of-month balance if trends continue
+- Time to reach savings goals at current rate
+- Impact of small changes ("Cutting $5/day = $150/month = vacation fund in 6 months!")
+- Seasonal spending alerts ("Holiday season approaching—historically your spending increases 40%")
+
+### 5. ACTIONABLE RECOMMENDATIONS
+Always provide the **"One Thing"**—a single, specific, achievable action:
+- ❌ Bad: "You should spend less on food"
+- ✅ Good: "Try meal-prepping Sundays—users who do this save an average of $200/month on food. Start with just planning 3 dinners this week!"
+
+### 6. CATEGORY-SPECIFIC SAVINGS ADVICE
+When discussing spending reduction, ALWAYS provide specific, practical tips for each category mentioned. Use this knowledge base:
+For example for:- 
+**🍔 FOOD & DINING:**
+- Meal prep on Sundays (saves $150-300/month)
+- Use apps like Too Good To Go for discounted restaurant food
+- "No Eating Out" weekday challenge
+- Bring lunch to work (saves $10-15/day)
+- Use cashback apps (Ibotta, Fetch) for groceries
+- Shop with a list, never hungry
+- Buy store brands (30% cheaper, same quality)
+
+
+### 7. MOOD-BOOSTING TECHNIQUES
+- Start responses with what's going WELL
+- Frame challenges as opportunities, not problems
+- Use progress language ("You're 60% closer to..." not "You still need...")
+- Celebrate consistency over perfection
+- Remind users of their "why" (goals they've set)
+
+## 🎨 RESPONSE FORMAT
+- Use bullet points for clarity
+- Include relevant emojis (but don't overdo it)
+- Structure longer responses with headers
+- Keep most responses 2-4 paragraphs unless detailed analysis requested
+- Provide specific insights and advices with every response
+- Always end with encouragement + ONE specific next step
+
+## 🔒 SECURITY RULES (CRITICAL)
+- NEVER ask for personal info (names, addresses, SSN, full card numbers)
+- NEVER store or reference previous conversation data
+- ONLY discuss the anonymized financial data provided
+- If user shares sensitive info, acknowledge and redirect WITHOUT repeating it
+- For non-financial questions, warmly redirect: "I'd love to help with that, but my superpower is money! Speaking of which, I noticed something interesting in your spending..."
+
+## 💬 RESPONSE EXAMPLES
+
+**For someone overspending:**
+"I see you're in warrior mode this month—spending is up! 💪 Here's the thing: you've already done the hardest part by tracking everything. Your food spending jumped to $800 (up 25% from last month). Quick win: try the 'restaurant pause'—cook at home just 3 more nights this week. That alone could save $60! What's one meal you actually enjoy cooking?"
+
+**For someone doing well:**
+"Look at you go! 🌟 You're saving 22% of your income—that puts you in the top tier of financial health. Your grocery spending is super efficient, and I love that your entertainment stayed flat while income grew. At this rate, you'll hit your emergency fund goal in just 4 months. The question is: what's the NEXT exciting goal we should set?"
+
+**For goal tracking:**
+"Your 'Vacation Fund' is at $1,200 of $3,000—you're 40% there! 🏖️ At your current monthly savings of $200, you'll reach it in 9 months. But here's a thought: if you redirected just $50 from dining out (currently $400/month), you'd get there in 6 months instead. That's summer vacation vs. winter vacation. Which sounds better?"
+
+## 🧠 PSYCHOLOGICAL PRINCIPLES TO APPLY
+1. **Progress Principle**: People are motivated by visible progress—always show movement toward goals
+2. **Fresh Start Effect**: Use beginnings (new month, week, year) as motivation points
+3. **Implementation Intentions**: Help create "If-Then" plans ("If I want takeout, I'll check my food budget first")
+4. **Reward Substitution**: Suggest non-monetary rewards for hitting savings milestones
+5. **Identity-Based Habits**: Help users see themselves as "a saver" not "someone trying to save"
+
+Remember: Your goal isn't just to report numbers—it's to inspire lasting behavioral change that leads to financial freedom and peace of mind. Every interaction should leave the user feeling more capable and motivated than before.
 """
 
-    for cat, amount in context.get("month_categories_expense", [])[:5]:
-        financial_summary += f"- {fmt_cat(cat)}: ${float(amount):,.2f}\n"
 
-    if context.get("goals"):
-        financial_summary += "\nFinancial Goals:\n"
-        for g in context["goals"][:3]:
-            target_date = g.get("target_date", "No deadline")
-            financial_summary += f"- {g['name']}: Target ${g['target']:,.2f}"
-            if target_date and target_date != "No deadline":
-                financial_summary += f", Due: {target_date}\n"
-            else:
-                financial_summary += "\n"
+def build_context_string(context: dict) -> str:
+    """
+    Build comprehensive financial context for LLM.
+    Structured for maximum analytical capability.
+    """
+    if not context.get("has_data"):
+        return "No financial data available yet. User needs to add transactions."
+    
+    def fmt(cat):
+        return str(cat).replace("_", " ").title() if cat else "Uncategorized"
 
-    # Daily averages
-    daily_exp = context.get("daily_expense_avg", Decimal(0))
-    financial_summary += f"\nDaily Average Spending: ${float(daily_exp):,.2f}"
+    # Get data
+    data_range = context.get("data_range", {})
+    this_week = context.get("this_week", {})
+    this_month = context.get("this_month", {})
+    last_month = context.get("last_month", {})
+    this_year = context.get("this_year", {})
+    all_time = context.get("all_time", {})
+    expense_stats = context.get("expense_statistics", {})
 
-    # SECURITY-FOCUSED system prompt
-    system_prompt = (
-        "You are a friendly AI Financial Coach. You help users understand "
-        "their finances and provide budgeting advice.\n\n"
-        "IMPORTANT RULES:\n"
-        "1. NEVER ask for or reference personal information (names, emails, "
-        "addresses, SSN, account numbers, passwords)\n"
-        "2. Only discuss the financial DATA provided below\n"
-        "3. If asked about personal info, politely redirect to finances\n"
-        "4. Be encouraging and supportive, not judgmental\n"
-        "5. Provide specific, actionable advice based on their data\n"
-        "6. Use emojis sparingly to make responses engaging\n"
-        "7. Keep responses concise (2-3 paragraphs max)\n"
-        "8. Reference their actual numbers when relevant\n"
-        "9. Suggest follow-up questions about finances\n"
-        "10. If asked about non-financial topics, stay focused on finances"
-    )
+    text = f"""# COMPLETE FINANCIAL DATA ANALYSIS
+Generated: {context.get('generated_at', 'Unknown')}
+Data Range: {data_range.get('earliest', 'N/A')} to {data_range.get('latest', 'N/A')} ({data_range.get('days', 0)} days, {data_range.get('total_transactions', 0)} transactions)
 
-    return f"{system_prompt}\n\n{financial_summary}\n\nUser Question: {safe_message}"
+---
+
+## 📊 SUMMARY BY TIME PERIOD
+
+### This Week
+- Income: {format_currency(this_week.get('income', 0))}
+- Expenses: {format_currency(this_week.get('expenses', 0))}
+- Net: {format_currency(this_week.get('net', 0))}
+
+### This Month
+- Income: {format_currency(this_month.get('income', 0))}
+- Expenses: {format_currency(this_month.get('expenses', 0))}
+- Net: {format_currency(this_month.get('net', 0))}
+
+### Last Month
+- Income: {format_currency(last_month.get('income', 0))}
+- Expenses: {format_currency(last_month.get('expenses', 0))}
+- Net: {format_currency(last_month.get('net', 0))}
+
+### Year to Date
+- Income: {format_currency(this_year.get('income', 0))}
+- Expenses: {format_currency(this_year.get('expenses', 0))}
+- Net: {format_currency(this_year.get('net', 0))}
+
+### All Time
+- Total Income: {format_currency(all_time.get('income', 0))}
+- Total Expenses: {format_currency(all_time.get('expenses', 0))}
+- Net Savings: {format_currency(all_time.get('net', 0))}
+
+---
+
+## 📈 EXPENSE STATISTICS (Use for anomaly detection)
+- Mean expense: {format_currency(expense_stats.get('mean', 0))}
+- Median expense: {format_currency(expense_stats.get('median', 0))}
+- Std deviation: {format_currency(expense_stats.get('std_dev', 0))}
+- Min: {format_currency(expense_stats.get('min', 0))} | Max: {format_currency(expense_stats.get('max', 0))}
+- 75th percentile: {format_currency(expense_stats.get('p75', 0))}
+- 90th percentile: {format_currency(expense_stats.get('p90', 0))}
+- 95th percentile: {format_currency(expense_stats.get('p95', 0))}
+(Transactions above 2x std dev from mean are likely anomalies)
+
+---
+
+## 📅 MONTHLY BREAKDOWN (All months with data)
+"""
+    
+    monthly = context.get("monthly_breakdown", {})
+    for month_key, data in list(monthly.items())[:24]:  # Up to 2 years
+        change = data.get('expense_change_pct', '')
+        change_str = f" (change: {change:+.1f}%)" if isinstance(change, (int, float)) else ""
+        text += f"- **{month_key}**: Income {format_currency(data.get('income', 0))} | Expenses {format_currency(data.get('expenses', 0))} | Txns: {data.get('transactions', 0)}{change_str}\n"
+
+    text += "\n---\n\n## 🏷️ ALL SPENDING CATEGORIES (Complete breakdown)\n"
+    categories = context.get("categories", {})
+    total_expenses = sum(d.get('total', 0) for d in categories.values())
+    for cat, data in categories.items():  # All categories, not limited
+        pct = (data.get('total', 0) / total_expenses * 100) if total_expenses > 0 else 0
+        text += f"- **{fmt(cat)}**: {format_currency(data.get('total', 0))} ({pct:.1f}%) | {data.get('count', 0)} transactions | Avg: {format_currency(data.get('avg', 0))}\n"
+
+    text += "\n---\n\n## 🔄 RECURRING PAYMENTS & SUBSCRIPTIONS\n"
+    text += "(Payments detected as recurring based on pattern analysis)\n\n"
+    
+    # Likely subscriptions first
+    subscriptions = context.get("likely_subscriptions", [])
+    if subscriptions:
+        text += "### Confirmed Subscriptions (consistent amount & frequency):\n"
+        for sub in subscriptions[:15]:
+            name = obfuscate_pii(sub.get('merchant', ''))
+            text += f"- **{name}**: {format_currency(sub.get('amount', 0))}/{sub.get('frequency', 'recurring')} | Total spent: {format_currency(sub.get('total_spent', 0))} | Last: {sub.get('last_date', 'N/A')}\n"
+    
+    recurring = context.get("recurring_payments", [])
+    if recurring:
+        text += "\n### All Recurring Payments:\n"
+        for r in recurring[:20]:
+            name = obfuscate_pii(r.get('merchant', ''))
+            sub_tag = " ✓SUBSCRIPTION" if r.get('is_subscription') else ""
+            text += f"- **{name}**: ~{format_currency(r.get('amount', 0))}/{r.get('frequency', '?')} | {r.get('count', 0)}x | Total: {format_currency(r.get('total_spent', 0))}{sub_tag}\n"
+
+    text += "\n---\n\n## 🏪 ALL MERCHANTS/VENDORS (Where money is spent)\n"
+    text += "(Every unique place/service money was spent)\n\n"
+    merchants = context.get("merchants", [])
+    for m in merchants[:40]:
+        name = obfuscate_pii(m.get('name', ''))
+        text += f"- **{name}**: {format_currency(m.get('total', 0))} | {m.get('count', 0)} transactions | Category: {fmt(m.get('category', ''))}\n"
+
+    text += "\n---\n\n## ⚠️ ANOMALIES & ALERTS (Pre-detected unusual activity)\n"
+    anomalies = context.get("anomalies", {})
+    
+    large_txns = anomalies.get("large_transactions", [])
+    if large_txns:
+        text += "\n### Unusually Large Transactions:\n"
+        for a in large_txns[:15]:
+            desc = obfuscate_pii(a.get('description', ''))
+            text += f"- {a.get('date', 'N/A')}: **{format_currency(a.get('amount', 0))}** - {desc} ({a.get('times_above_mean', 0)}x above average)\n"
+    
+    spikes = anomalies.get("category_spikes", [])
+    if spikes:
+        text += "\n### Category Spending Spikes (vs last month):\n"
+        for s in spikes:
+            text += f"- **{fmt(s.get('category', ''))}**: {format_currency(s.get('current_month', 0))} vs {format_currency(s.get('last_month', 0))} (+{s.get('change_pct', 0)}%)\n"
+
+    goals = context.get("goals", [])
+    if goals:
+        text += "\n---\n\n## 🎯 FINANCIAL GOALS\n"
+        for g in goals:
+            text += f"- **{g.get('name', 'Goal')}**: {format_currency(g.get('current', 0))} / {format_currency(g.get('target', 0))} ({g.get('progress_pct', 0)}%) - Status: {g.get('status', 'unknown')}\n"
+
+    # Note: Individual transactions not included - LLM has category summaries, 
+    # monthly data, merchant analysis, and anomalies for comprehensive analysis
+
+    # Savings rate calculation
+    if this_month.get('income', 0) > 0:
+        rate = (this_month.get('net', 0) / this_month.get('income', 0)) * 100
+        text += f"\n---\n\n## 💰 CURRENT SAVINGS RATE: {rate:.1f}%\n"
+        if rate >= 20:
+            text += "Status: EXCELLENT (20%+ is ideal)"
+        elif rate >= 10:
+            text += "Status: GOOD (aim for 20%)"
+        elif rate >= 0:
+            text += "Status: FAIR (positive but room to improve)"
+        else:
+            text += "Status: WARNING (spending exceeds income)"
+
+    return text
 
 
-async def call_ai_model(prompt: str) -> Optional[str]:
-    """Call OpenAI-compatible API for AI response."""
+async def call_llm(messages: list[dict]) -> Optional[str]:
+    """Call OpenAI-compatible API."""
     if not settings.openai_api_key:
         return None
 
     try:
-        base_url = settings.openai_base_url or "https://api.openai.com/v1"
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        api_key = settings.openai_api_key
+        
+        if api_key.startswith("github_pat_") or api_key.startswith("ghp_"):
+            base_url = settings.openai_base_url or "https://models.inference.ai.azure.com"
+        else:
+            base_url = settings.openai_base_url or "https://api.openai.com/v1"
+        
+        model = settings.openai_model or "gpt-4o-mini"
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.openai_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": settings.openai_model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 500,
-                    "temperature": 0.7,
-                },
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": messages, "max_tokens": 2000, "temperature": 0.7},
             )
 
             if response.status_code == 200:
-                data = response.json()
-                return data["choices"][0]["message"]["content"]
+                return response.json()["choices"][0]["message"]["content"]
             else:
-                print(f"AI API Error: {response.status_code} - {response.text}")
+                print(f"LLM Error [{response.status_code}]: {response.text[:200]}")
                 return None
 
     except Exception as e:
-        print(f"AI API Exception: {str(e)}")
+        print(f"LLM Exception: {e}")
         return None
 
 
-def get_default_response(context: dict) -> str:
-    """Get default response when no pattern matches and AI is unavailable."""
-    month = context["month"]
-
-    return (
-        f"📊 **Quick Summary for {context['month_name']}:**\n\n"
-        f"• Income: {format_currency(month['income'])}\n"
-        f"• Expenses: {format_currency(month['expenses'])}\n"
-        f"• Net: {format_currency(month['net'])}\n\n"
-        "Ask me anything about your finances! Try:\n"
-        '• "What are my total expenses?"\n'
-        '• "Compare to last month"\n'
-        '• "How can I save more?"\n'
-        '• "What\'s my financial health?"\n\n'
-        "Type **help** to see all available commands."
-    )
-
-
+# ============================================
+# CHAT ENDPOINT
+# ============================================
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_coach(
     request: ChatRequest,
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """
-    Chat with the AI financial coach.
-
-    Security features:
-    - Input validation and sanitization (via Pydantic)
-    - No PII sent to external AI models
-    - Blocked topics detection
-    - User ID only (no names/emails) used for data retrieval
-    """
-    # Note: Validation happens in Pydantic model (blocked patterns, length)
-
+    """Chat with AI financial coach (LLM-only)."""
     try:
-        # Detect user intent for smarter responses
         intent = detect_intent(request.message)
-
-        # Handle greetings with personality
-        if intent == Intent.GREETING:
-            return ChatResponse(
-                response=random.choice(GREETINGS),
-                intent=intent.value,
-                suggestions=["Show my summary", "What did I spend?", "Give me advice"],
-            )
-
-        # Handle thanks
-        if intent == Intent.THANKS:
-            return ChatResponse(
-                response=random.choice(THANKS_RESPONSES),
-                intent=intent.value,
-                suggestions=["Show summary", "Any more advice?", "What else can you do?"],
-            )
-
-        # Get comprehensive financial context (uses user_id only, no PII)
-        context = await get_comprehensive_financial_context(current_user.id, db)
+        context = await get_financial_context(current_user.id, db)
 
         if not context.get("has_data"):
+            context = {
+                "has_data": False,
+                "month_name": datetime.now().strftime("%B %Y"),
+                "last_month_name": "Last Month",
+                "month": {"income": Decimal(0), "expenses": Decimal(0), "net": Decimal(0)},
+                "last_month": {"income": Decimal(0), "expenses": Decimal(0), "net": Decimal(0)},
+                "week": {"income": Decimal(0), "expenses": Decimal(0), "net": Decimal(0)},
+                "year": {"income": Decimal(0), "expenses": Decimal(0), "net": Decimal(0)},
+                "all_time": {"income": Decimal(0), "expenses": Decimal(0), "net": Decimal(0)},
+                "month_categories": [],
+                "income_categories": [],
+                "top_expenses": [],
+                "monthly_data": {},
+                "total_transactions": 0,
+                "days_tracked": 0,
+                "daily_expense_avg": Decimal(0),
+                "daily_income_avg": Decimal(0),
+                "goals": [],
+            }
+
+        if not settings.openai_api_key:
             return ChatResponse(
-                response=context.get("message", "No financial data available yet."),
-                intent=intent.value,
-                suggestions=[
-                    "Add your first transaction",
-                    "Import from CSV",
-                    "How does this work?",
-                ],
+                response="⚠️ **AI Coach Not Configured**\n\nAdd your API key to `.env`:\n```\nOPENAI_API_KEY=sk-your-key\n```",
+                intent="error",
+                suggestions=["How to set up?"],
             )
 
-        # Try rule-based response first (fast, no external calls)
-        response = generate_ai_response(request.message, context)
+        # Build messages with obfuscated content
+        safe_message = obfuscate_pii(request.message)
+        financial_context = build_context_string(context)
+        
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"{financial_context}\n\n---\n\n**Question:** {safe_message}"}
+        ]
 
-        # If no rule matched, try AI model for complex questions
-        if response is None:
-            # Build privacy-safe prompt (no PII sent to AI)
-            prompt = build_ai_prompt(request.message, context)
-
-            # Call AI model
-            ai_response = await call_ai_model(prompt)
-
-            if ai_response:
-                response = ai_response
-            else:
-                # Fall back to default response if AI is unavailable
-                response = get_default_response(context)
-
-        # Add encouragement randomly (20% chance)
-        if random.random() < 0.2 and intent not in [Intent.GREETING, Intent.THANKS]:
-            response += f"\n\n{random.choice(ENCOURAGEMENTS)}"
-
-        # Get contextual follow-up suggestions
-        suggestions = get_follow_up_suggestions(intent, context)
+        response = await call_llm(messages)
+        
+        if not response:
+            return ChatResponse(
+                response="I'm having trouble connecting right now. 🤔\n\nPlease check your API key and try again!",
+                intent="error",
+                suggestions=["Try again"],
+            )
 
         return ChatResponse(
             response=response,
             intent=intent.value,
-            suggestions=suggestions,
+            suggestions=get_suggestions(intent),
         )
 
     except ValueError as e:
-        # Validation errors (blocked patterns, etc.)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        # Log the error for debugging (no user PII in logs)
-        print(f"AI Coach Error: {type(e).__name__}")
+        print(f"AI Coach Error: {e}")
         return ChatResponse(
-            response="I'm having trouble right now. Please try again! 🔄",
+            response="Something went wrong. Please try again! 🔄",
             intent="error",
-            suggestions=["Show summary", "Help", "What can you do?"],
+            suggestions=["Try again"],
         )

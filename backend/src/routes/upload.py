@@ -10,6 +10,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from openpyxl import load_workbook
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
@@ -29,11 +30,10 @@ async def get_or_create_category(
     
     category_name = category_name.strip()
     
-    # Check if category exists
+    # Check if category exists (by name only, matching the unique constraint)
     result = await db.execute(
         select(TransactionCategory).where(
             TransactionCategory.name == category_name,
-            TransactionCategory.transaction_type == transaction_type,
         )
     )
     existing = result.scalar_one_or_none()
@@ -41,14 +41,79 @@ async def get_or_create_category(
     if existing:
         return existing.name
     
-    # Create new category
-    new_category = TransactionCategory(
-        name=category_name,
-        transaction_type=transaction_type,
-    )
-    db.add(new_category)
-    await db.flush()  # Flush to ensure it's created but not committed yet
-    return category_name
+    # Try to create new category, handle race conditions with upsert-like behavior
+    try:
+        new_category = TransactionCategory(
+            name=category_name,
+            transaction_type=transaction_type,
+        )
+        db.add(new_category)
+        await db.flush()
+        return category_name
+    except IntegrityError:
+        # Category was created by another concurrent process - this is expected
+        # Expunge the failed object and refresh the session state
+        await db.rollback()
+        
+        # Re-query to get the existing category
+        result = await db.execute(
+            select(TransactionCategory).where(
+                TransactionCategory.name == category_name,
+            )
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            return existing.name
+        
+        # Shouldn't happen, but return the name anyway
+        return category_name
+
+
+async def ensure_categories_exist(
+    db: AsyncSession, categories: set[tuple[str, str]]
+) -> dict[str, str]:
+    """
+    Pre-create all categories to avoid IntegrityError during transaction insertion.
+    Returns a mapping of category names.
+    """
+    category_map = {}
+    
+    for category_name, transaction_type in categories:
+        if not category_name or not category_name.strip():
+            category_name = "Uncategorized"
+        category_name = category_name.strip()
+        
+        # Check if exists
+        result = await db.execute(
+            select(TransactionCategory).where(
+                TransactionCategory.name == category_name,
+            )
+        )
+        existing = result.scalar_one_or_none()
+        
+        if existing:
+            category_map[category_name] = existing.name
+        else:
+            try:
+                new_category = TransactionCategory(
+                    name=category_name,
+                    transaction_type=transaction_type,
+                )
+                db.add(new_category)
+                await db.flush()
+                category_map[category_name] = category_name
+            except IntegrityError:
+                await db.rollback()
+                # Re-fetch after rollback
+                result = await db.execute(
+                    select(TransactionCategory).where(
+                        TransactionCategory.name == category_name,
+                    )
+                )
+                existing = result.scalar_one_or_none()
+                category_map[category_name] = existing.name if existing else category_name
+    
+    return category_map
 
 
 @router.post("/excel", status_code=status.HTTP_201_CREATED)
@@ -85,101 +150,101 @@ async def upload_excel(
             "categories_added": set(),
         }
         
-        # Process Expenses sheet
+        # First pass: Collect all unique categories from both sheets
+        categories_to_create: set[tuple[str, str]] = set()
+        expense_rows = []
+        income_rows = []
+        
+        # Collect expenses data
         if "Expenses" in wb.sheetnames:
             expenses_sheet = wb["Expenses"]
             for row_idx, row in enumerate(
                 expenses_sheet.iter_rows(min_row=3, values_only=True), start=3
             ):
-                # Skip empty rows or rows with missing required data
                 if not row or len(row) < 3 or not row[0] or row[2] is None:
                     continue
-                
-                try:
-                    date_value = row[0]
-                    category = row[1] if len(row) > 1 else None
-                    amount = row[2]
-                    comment = row[3] if len(row) > 3 else None
-                    
-                    # Parse date
-                    if isinstance(date_value, datetime):
-                        transaction_date = date_value.replace(tzinfo=timezone.utc)
-                    else:
-                        transaction_date = datetime.strptime(
-                            str(date_value), "%Y-%m-%d"
-                        ).replace(tzinfo=timezone.utc)
-                    
-                    # Get or create category
-                    category_name = await get_or_create_category(
-                        db,
-                        str(category) if category else "Uncategorized",
-                        "expense",
-                    )
-                    transactions_created["categories_added"].add(category_name)
-                    
-                    # Create transaction
-                    transaction = Transaction(
-                        user_id=current_user.id,
-                        transaction_type=TransactionType.EXPENSE,
-                        amount=Decimal(str(amount)),
-                        category=category_name,
-                        description=str(comment) if comment else None,
-                        transaction_date=transaction_date,
-                    )
-                    db.add(transaction)
-                    transactions_created["expenses"] += 1
-                    
-                except Exception as e:
-                    transactions_created["errors"].append(f"Expenses row {row_idx}: {str(e)}")
+                category = str(row[1]).strip() if row[1] else "Uncategorized"
+                categories_to_create.add((category, "expense"))
+                expense_rows.append((row_idx, row))
         
-        # Process Income sheet
+        # Collect income data
         if "Income" in wb.sheetnames:
             income_sheet = wb["Income"]
             for row_idx, row in enumerate(
                 income_sheet.iter_rows(min_row=3, values_only=True), start=3
             ):
-                # Skip empty rows or rows with missing required data
                 if not row or len(row) < 3 or not row[0] or row[2] is None:
                     continue
-                
-                try:
-                    date_value = row[0]
-                    category = row[1] if len(row) > 1 else None
-                    amount = row[2]
-                    comment = row[3] if len(row) > 3 else None
-                    
-                    # Parse date
-                    if isinstance(date_value, datetime):
-                        transaction_date = date_value.replace(tzinfo=timezone.utc)
-                    else:
-                        transaction_date = datetime.strptime(
-                            str(date_value), "%Y-%m-%d"
-                        ).replace(tzinfo=timezone.utc)
-                    
-                    # Get or create category
-                    category_name = await get_or_create_category(
-                        db,
-                        str(category) if category else "Uncategorized",
-                        "income",
-                    )
-                    transactions_created["categories_added"].add(category_name)
-                    
-                    # Create transaction
-                    transaction = Transaction(
-                        user_id=current_user.id,
-                        transaction_type=TransactionType.INCOME,
-                        amount=Decimal(str(amount)),
-                        category=category_name,
-                        description=str(comment) if comment else None,
-                        transaction_date=transaction_date,
-                    )
-                    db.add(transaction)
-                    transactions_created["income"] += 1
-                    
-                except Exception as e:
-                    transactions_created["errors"].append(f"Income row {row_idx}: {str(e)}")
+                category = str(row[1]).strip() if row[1] else "Uncategorized"
+                categories_to_create.add((category, "income"))
+                income_rows.append((row_idx, row))
         
-        # Commit all transactions and categories
+        # Second pass: Create all categories first (handles duplicates gracefully)
+        category_map = await ensure_categories_exist(db, categories_to_create)
+        transactions_created["categories_added"] = set(category_map.keys())
+        
+        # Third pass: Create all transactions
+        for row_idx, row in expense_rows:
+            try:
+                date_value = row[0]
+                category = str(row[1]).strip() if row[1] else "Uncategorized"
+                amount = row[2]
+                comment = row[3] if len(row) > 3 else None
+                
+                # Parse date
+                if isinstance(date_value, datetime):
+                    transaction_date = date_value.replace(tzinfo=timezone.utc)
+                else:
+                    transaction_date = datetime.strptime(
+                        str(date_value), "%Y-%m-%d"
+                    ).replace(tzinfo=timezone.utc)
+                
+                # Create transaction
+                transaction = Transaction(
+                    user_id=current_user.id,
+                    transaction_type=TransactionType.EXPENSE,
+                    amount=Decimal(str(amount)),
+                    category=category_map.get(category, category),
+                    description=str(comment) if comment else None,
+                    transaction_date=transaction_date,
+                )
+                db.add(transaction)
+                transactions_created["expenses"] += 1
+                
+            except Exception as e:
+                transactions_created["errors"].append(f"Expenses row {row_idx}: {str(e)}")
+        
+        for row_idx, row in income_rows:
+            try:
+                date_value = row[0]
+                category = str(row[1]).strip() if row[1] else "Uncategorized"
+                amount = row[2]
+                comment = row[3] if len(row) > 3 else None
+                
+                # Parse date
+                if isinstance(date_value, datetime):
+                    transaction_date = date_value.replace(tzinfo=timezone.utc)
+                else:
+                    transaction_date = datetime.strptime(
+                        str(date_value), "%Y-%m-%d"
+                    ).replace(tzinfo=timezone.utc)
+                
+                # Create transaction
+                transaction = Transaction(
+                    user_id=current_user.id,
+                    transaction_type=TransactionType.INCOME,
+                    amount=Decimal(str(amount)),
+                    category=category_map.get(category, category),
+                    description=str(comment) if comment else None,
+                    transaction_date=transaction_date,
+                )
+                db.add(transaction)
+                transactions_created["income"] += 1
+                
+            except Exception as e:
+                transactions_created["errors"].append(f"Income row {row_idx}: {str(e)}")
+        
+        # Commit all transactions
         await db.commit()
         
         wb.close()

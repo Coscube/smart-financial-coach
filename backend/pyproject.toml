@@ -32,6 +32,7 @@ pyjwt = "2.10.1"
 cryptography = "44.0.2"
 passlib = { version = "^1.7.4", extras = ["bcrypt"] }
 bcrypt = "^4.0.0"
+python-magic = "^0.4.27"  # For file type detection
 
 # Utilities
 python-dotenv = "1.0.1"
